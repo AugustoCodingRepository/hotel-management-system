@@ -1,11 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['mongodb']
-  },
-  env: {
-    MONGODB_URI: process.env.MONGODB_URI,
-  },
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -15,6 +9,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  experimental: {
+    serverComponentsExternalPackages: ['mongodb']
+  }
 }
 
 export default nextConfig
