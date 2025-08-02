@@ -1,8 +1,13 @@
 {
+  "buildCommand": "npm run build",
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 30
     }
+<<<<<<< HEAD
   },
   "buildCommand": "npm run build"
+=======
+  }
+>>>>>>> 3579a95b8c5237197d847c4e2591ff49fad54829
 }
