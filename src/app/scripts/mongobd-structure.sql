@@ -50,12 +50,11 @@
       "2025-07-24": { "amount": 74.00, "description": "Camera standard" },
       "2025-07-25": { "amount": 74.00, "description": "Camera standard" }
     },
-    "colazione": {
-      "2025-07-23": { "amount": 12.00, "description": "Colazione continentale" }
+    "lunch": {
+      "2025-07-23": { "amount": 25.00, "description": "Menu fisso pranzo" }
     },
-    "pranzo": {},
-    "cena": {
-      "2025-07-23": { "amount": 35.00, "description": "Menu fisso" }
+    "dinner": {
+      "2025-07-23": { "amount": 35.00, "description": "Menu fisso cena" }
     },
     "minibar": {
       "2025-07-24": { 
@@ -67,16 +66,29 @@
         ]
       }
     },
+    "bar": {
+      "2025-07-23": { "amount": 18.00, "description": "Aperitivo" }
+    },
+    "custom1": {
+      "2025-07-24": { "amount": 10.00, "description": "Servizio personalizzato 1" }
+    },
+    "custom2": {
+      "2025-07-25": { "amount": 8.00, "description": "Servizio personalizzato 2" }
+    },
     "transfer": {}
+  },
+  "serviceLabels": {
+    "custom1": "Spa",
+    "custom2": "Escursioni"
   },
   "calculations": {
     "roomTotal": 222.00,
-    "servicesTotal": 62.00, // colazione + pranzo + cena + minibar
+    "servicesTotal": 111.00, // lunch + dinner + minibar + bar + custom1 + custom2
     "extrasAmount": 0.00,
     "transferAmount": 0.00,
-    "subtotal": 284.00,
+    "subtotal": 333.00,
     "advancePayment": 0.00,
-    "finalTotal": 284.00,
+    "finalTotal": 333.00,
     "cityTax": {
       "ratePerPersonPerNight": 2.00,
       "totalAmount": 12.00, // 2 adults × 3 nights × 2€
@@ -159,9 +171,9 @@
       "suite": 150.00
     },
     "serviceRates": {
-      "colazione": 12.00,
-      "pranzo": 25.00,
-      "cena": 35.00
+      "lunch": 25.00,
+      "dinner": 35.00,
+      "bar": 15.00
     }
   },
   "printing": {

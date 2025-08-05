@@ -18,6 +18,7 @@ interface RoomData {
     [key: string]: { [date: string]: string }
   }
   minibarDescriptions: { [date: string]: string }
+  serviceLabels: { [key: string]: string }
   tableDates: string[]
 }
 
@@ -39,9 +40,15 @@ export function useRoomAccountRealtime(roomNumber: number) {
       Dinner: {},
       Minibar: {},
       Bar: {},
+      Custom1: {},
+      Custom2: {},
       Transfer: {},
     },
     minibarDescriptions: {},
+    serviceLabels: {
+      Custom1: "Servizio 1",
+      Custom2: "Servizio 2",
+    },
     tableDates: [],
   })
 
@@ -72,7 +79,7 @@ export function useRoomAccountRealtime(roomNumber: number) {
             roomNumber: currentRoomNumber,
             checkOut: data.checkOut,
             hasData,
-            customer: data.customer, // Includi il nome del cliente!
+            customer: data.customer,
           },
         }),
       )
@@ -112,9 +119,15 @@ export function useRoomAccountRealtime(roomNumber: number) {
               Dinner: account.services.dinner || account.services.cena || {},
               Minibar: account.services.minibar || {},
               Bar: account.services.bar || {},
+              Custom1: account.services.custom1 || {},
+              Custom2: account.services.custom2 || {},
               Transfer: account.services.transfer || {},
             },
             minibarDescriptions: account.minibarDescriptions,
+            serviceLabels: account.serviceLabels || {
+              Custom1: "Servizio 1",
+              Custom2: "Servizio 2",
+            },
             tableDates: account.tableDates,
           }
 
@@ -146,9 +159,15 @@ export function useRoomAccountRealtime(roomNumber: number) {
               Dinner: {},
               Minibar: {},
               Bar: {},
+              Custom1: {},
+              Custom2: {},
               Transfer: {},
             },
             minibarDescriptions: {},
+            serviceLabels: {
+              Custom1: "Servizio 1",
+              Custom2: "Servizio 2",
+            },
             tableDates,
           }
 
@@ -197,6 +216,8 @@ export function useRoomAccountRealtime(roomNumber: number) {
             dinner: data.tableData.Dinner,
             minibar: data.tableData.Minibar,
             bar: data.tableData.Bar,
+            custom1: data.tableData.Custom1,
+            custom2: data.tableData.Custom2,
             transfer: data.tableData.Transfer,
           },
           extras: data.extras,
@@ -219,16 +240,18 @@ export function useRoomAccountRealtime(roomNumber: number) {
             dinner: data.tableData.Dinner,
             minibar: data.tableData.Minibar,
             bar: data.tableData.Bar,
+            custom1: data.tableData.Custom1,
+            custom2: data.tableData.Custom2,
             transfer: data.tableData.Transfer,
           },
           minibarDescriptions: data.minibarDescriptions,
+          serviceLabels: data.serviceLabels,
           extras: data.extras,
           transfer: data.transfer,
           advancePayment: data.advancePayment,
           notes: data.notes,
           tableDates: data.tableDates,
           calculations,
-          // NON includere _id qui!
         }
 
         let success = false
@@ -241,7 +264,7 @@ export function useRoomAccountRealtime(roomNumber: number) {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify(accountData), // Senza _id
+            body: JSON.stringify(accountData),
           })
           success = response.ok
           if (!success) {

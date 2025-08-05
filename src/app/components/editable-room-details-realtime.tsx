@@ -25,7 +25,7 @@ export const EditableRoomDetailsRealtime = forwardRef<RoomDetailsRef, RoomDetail
   }, [roomData.tableData.Room])
 
   const extrasFromTable = useMemo(() => {
-    const servicesToSum = ["Lunch", "Dinner", "Minibar", "Bar"]
+    const servicesToSum = ["Lunch", "Dinner", "Minibar", "Bar", "Custom1", "Custom2"]
     let total = 0
 
     servicesToSum.forEach((service) => {
@@ -59,6 +59,16 @@ export const EditableRoomDetailsRealtime = forwardRef<RoomDetailsRef, RoomDetail
           ...roomData.tableData[service],
           [date]: value,
         },
+      },
+    })
+  }
+
+  const updateServiceLabel = (oldLabel: string, newLabel: string) => {
+    console.log(`📝 Service label changed from ${oldLabel} to ${newLabel}`)
+    setRoomData({
+      serviceLabels: {
+        ...roomData.serviceLabels,
+        [oldLabel]: newLabel,
       },
     })
   }
@@ -127,7 +137,7 @@ export const EditableRoomDetailsRealtime = forwardRef<RoomDetailsRef, RoomDetail
     handlePrint,
   }))
 
-  const services = ["Room", "Lunch", "Dinner", "Minibar", "Bar"]
+  const services = ["Room", "Lunch", "Dinner", "Minibar", "Bar", "Custom1", "Custom2"]
 
   if (isLoading) {
     return (
@@ -260,7 +270,19 @@ export const EditableRoomDetailsRealtime = forwardRef<RoomDetailsRef, RoomDetail
             <tbody>
               {services.map((service) => (
                 <tr key={service}>
-                  <td className="border border-gray-300 p-2 text-xs font-medium bg-gray-50">{service}</td>
+                  <td className="border border-gray-300 p-1 bg-gray-50">
+                    {service === "Custom1" || service === "Custom2" ? (
+                      <input
+                        type="text"
+                        value={roomData.serviceLabels?.[service] || service}
+                        onChange={(e) => updateServiceLabel(service, e.target.value)}
+                        className="w-full px-1 py-0.5 text-xs border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-500 font-medium"
+                        placeholder={`Servizio ${service === "Custom1" ? "1" : "2"}`}
+                      />
+                    ) : (
+                      <span className="text-xs font-medium">{service}</span>
+                    )}
+                  </td>
                   {roomData.tableDates.map((date) => (
                     <td key={date} className="border border-gray-300 p-1">
                       {service === "Minibar" ? (
@@ -379,7 +401,7 @@ export const EditableRoomDetailsRealtime = forwardRef<RoomDetailsRef, RoomDetail
           <div className="grid grid-cols-3 gap-4">
             <div>
               <p className="font-medium">Hotel "Il Nido" Restaurant</p>
-              <p>Via Nastro Verde 62 | Sorrento (80067)</p>
+              <p>Via Nastro Verde 82 | Sorrento (80067)</p>
               <p className="font-medium">Website: ilnido.it</p>
             </div>
             <div>
@@ -390,7 +412,7 @@ export const EditableRoomDetailsRealtime = forwardRef<RoomDetailsRef, RoomDetail
                 <span className="font-medium">Email:</span> info@ilnido.it
               </p>
               <p>
-                <span className="font-medium">Phone:</span> +39 081 878 2766
+                <span className="font-medium">Phone:</span> +39 081 878 2706
               </p>
             </div>
           </div>
