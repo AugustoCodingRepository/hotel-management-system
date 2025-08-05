@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { initializeRoomsOnly } from "@/scripts/initialize-rooms-only"
+import { initializeRoomsOnly } from "@/app/scripts/initialize-rooms-only"
 
 export async function POST() {
   try {
