@@ -13,7 +13,7 @@ export default function SetupRoomsPage() {
 
         <div className="mt-8 text-center">
           <a href="/" className="text-blue-600 hover:text-blue-800 underline">
-            ← Torna alla Home
+            ← Torna alla Home 
           </a>
         </div>
       </div>
