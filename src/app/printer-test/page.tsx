@@ -1,4 +1,5 @@
-import { PrinterTest } from '@/components/printer-test'
+import { PrinterTest } from '@/app/components/printer-test'
+
 
 export default function PrinterTestPage() {
   return (
