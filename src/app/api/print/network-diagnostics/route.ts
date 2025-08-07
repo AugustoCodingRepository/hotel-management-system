@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { exec } from "child_process"
 import { promisify } from "util"
 import os from "os"
+import net from "net"
 
 const execAsync = promisify(exec)
 
@@ -35,27 +36,38 @@ async function runNetworkDiagnostics(printerIp: string) {
       isVercel: !!process.env.VERCEL,
       isDocker: false,
       isContainer: false,
-      hostingProvider: 'unknown'
+      hostingProvider: 'unknown',
+      hostname: os.hostname()
     },
     networkCapabilities: {
       canPing: false,
       canTelnet: false,
       canNetcat: false,
       canCurl: false,
-      hasNetworkTools: false
+      hasNetworkTools: false,
+      canExecCommands: false
     },
     connectivityTests: {
       icmpPing: { success: false, details: '' },
       port9100: { success: false, details: '' },
       port80: { success: false, details: '' },
-      port443: { success: false, details: '' }
+      port443: { success: false, details: '' },
+      socketTest: { success: false, details: '' }
     },
     systemInfo: {
       uid: '',
       gid: '',
-      hostname: '',
-      networkInterfaces: {},
-      processes: ''
+      hostname: os.hostname(),
+      networkInterfaces: os.networkInterfaces(),
+      processes: '',
+      memoryUsage: process.memoryUsage(),
+      environmentVariables: {
+        NODE_ENV: process.env.NODE_ENV,
+        VERCEL: process.env.VERCEL,
+        VERCEL_ENV: process.env.VERCEL_ENV,
+        AWS_LAMBDA_FUNCTION_NAME: process.env.AWS_LAMBDA_FUNCTION_NAME,
+        GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT
+      }
     }
   }
 
@@ -65,7 +77,7 @@ async function runNetworkDiagnostics(printerIp: string) {
   // 2. Test network capabilities
   await testNetworkCapabilities(diagnostics)
   
-  // 3. Run connectivity tests
+  // 3. Run connectivity tests (including pure Node.js socket test)
   await runConnectivityTests(printerIp, diagnostics)
   
   // 4. Gather system info
@@ -90,6 +102,16 @@ async function detectEnvironment(diagnostics: any) {
       diagnostics.environment.hostingProvider = 'google-cloud'
     }
     
+    // Check for Railway
+    if (process.env.RAILWAY_ENVIRONMENT) {
+      diagnostics.environment.hostingProvider = 'railway'
+    }
+    
+    // Check for Render
+    if (process.env.RENDER) {
+      diagnostics.environment.hostingProvider = 'render'
+    }
+    
     // Check for Docker
     try {
       await execAsync('cat /.dockerenv')
@@ -108,28 +130,36 @@ async function detectEnvironment(diagnostics: any) {
       // Can't read cgroup
     }
     
-    // Check hostname
-    try {
-      const hostnameResult = await execAsync('hostname')
-      diagnostics.environment.hostname = hostnameResult.stdout.trim()
-    } catch {
-      diagnostics.environment.hostname = 'unknown'
-    }
-    
   } catch (error) {
     console.log("Error detecting environment:", error)
   }
 }
 
 async function testNetworkCapabilities(diagnostics: any) {
+  // First test if we can execute commands at all
+  try {
+    await execAsync('echo "test"')
+    diagnostics.networkCapabilities.canExecCommands = true
+  } catch (error) {
+    diagnostics.networkCapabilities.canExecCommands = false
+    console.log("Cannot execute commands:", error)
+    return // If we can't execute commands, skip other tests
+  }
+
   const commands = ['ping', 'telnet', 'nc', 'curl', 'nmap', 'netstat']
   
   for (const cmd of commands) {
     try {
       await execAsync(`which ${cmd}`)
-      diagnostics.networkCapabilities[`can${cmd.charAt(0).toUpperCase() + cmd.slice(1)}`] = true
+      const capKey = `can${cmd.charAt(0).toUpperCase() + cmd.slice(1)}`
+      if (capKey in diagnostics.networkCapabilities) {
+        diagnostics.networkCapabilities[capKey] = true
+      }
     } catch {
-      diagnostics.networkCapabilities[`can${cmd.charAt(0).toUpperCase() + cmd.slice(1)}`] = false
+      const capKey = `can${cmd.charAt(0).toUpperCase() + cmd.slice(1)}`
+      if (capKey in diagnostics.networkCapabilities) {
+        diagnostics.networkCapabilities[capKey] = false
+      }
     }
   }
   
@@ -141,7 +171,42 @@ async function testNetworkCapabilities(diagnostics: any) {
 }
 
 async function runConnectivityTests(printerIp: string, diagnostics: any) {
-  // Test ICMP Ping
+  // Test 1: Pure Node.js Socket Test (this should work even without system commands)
+  try {
+    await testSocketConnection(printerIp, 9100, 5000)
+    diagnostics.connectivityTests.socketTest = {
+      success: true,
+      details: `Socket connection to ${printerIp}:9100 successful`
+    }
+  } catch (error: any) {
+    diagnostics.connectivityTests.socketTest = {
+      success: false,
+      details: `Socket connection failed: ${error.message}`
+    }
+  }
+
+  // Only run system command tests if we can execute commands
+  if (!diagnostics.networkCapabilities.canExecCommands) {
+    diagnostics.connectivityTests.icmpPing = {
+      success: false,
+      details: 'Cannot execute system commands (probably Vercel/serverless)'
+    }
+    diagnostics.connectivityTests.port9100 = {
+      success: false,
+      details: 'Cannot execute system commands (probably Vercel/serverless)'
+    }
+    diagnostics.connectivityTests.port80 = {
+      success: false,
+      details: 'Cannot execute system commands (probably Vercel/serverless)'
+    }
+    diagnostics.connectivityTests.port443 = {
+      success: false,
+      details: 'Cannot execute system commands (probably Vercel/serverless)'
+    }
+    return
+  }
+
+  // Test 2: ICMP Ping (only if commands are available)
   try {
     const pingResult = await execAsync(`ping -c 1 -W 3000 ${printerIp}`)
     diagnostics.connectivityTests.icmpPing = {
@@ -155,7 +220,7 @@ async function runConnectivityTests(printerIp: string, diagnostics: any) {
     }
   }
   
-  // Test Port 9100 (printer)
+  // Test 3: Port 9100 (printer)
   try {
     const port9100Result = await execAsync(`timeout 5 nc -z -v ${printerIp} 9100`)
     diagnostics.connectivityTests.port9100 = {
@@ -178,7 +243,7 @@ async function runConnectivityTests(printerIp: string, diagnostics: any) {
     }
   }
   
-  // Test Port 80 (HTTP)
+  // Test 4: Port 80 (HTTP)
   try {
     const port80Result = await execAsync(`timeout 3 nc -z -v ${printerIp} 80`)
     diagnostics.connectivityTests.port80 = {
@@ -192,7 +257,7 @@ async function runConnectivityTests(printerIp: string, diagnostics: any) {
     }
   }
   
-  // Test Port 443 (HTTPS)
+  // Test 5: Port 443 (HTTPS)
   try {
     const port443Result = await execAsync(`timeout 3 nc -z -v ${printerIp} 443`)
     diagnostics.connectivityTests.port443 = {
@@ -208,6 +273,14 @@ async function runConnectivityTests(printerIp: string, diagnostics: any) {
 }
 
 async function gatherSystemInfo(diagnostics: any) {
+  // Only try to get system info if we can execute commands
+  if (!diagnostics.networkCapabilities.canExecCommands) {
+    diagnostics.systemInfo.uid = 'Cannot execute commands'
+    diagnostics.systemInfo.gid = 'Cannot execute commands'
+    diagnostics.systemInfo.processes = 'Cannot execute commands (probably Vercel/serverless)'
+    return
+  }
+
   try {
     // Get user ID
     const uidResult = await execAsync('id -u')
@@ -225,18 +298,34 @@ async function gatherSystemInfo(diagnostics: any) {
   }
   
   try {
-    // Get network interfaces
-    const interfaces = os.networkInterfaces()
-    diagnostics.systemInfo.networkInterfaces = interfaces
-  } catch {
-    diagnostics.systemInfo.networkInterfaces = {}
-  }
-  
-  try {
     // Get running processes (limited)
     const psResult = await execAsync('ps aux | head -10')
     diagnostics.systemInfo.processes = psResult.stdout
   } catch {
     diagnostics.systemInfo.processes = 'Cannot read processes'
   }
+}
+
+// Pure Node.js socket test function
+function testSocketConnection(host: string, port: number, timeout: number = 5000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = new net.Socket()
+    
+    const timer = setTimeout(() => {
+      socket.destroy()
+      reject(new Error(`Connection timeout after ${timeout}ms`))
+    }, timeout)
+
+    socket.connect(port, host, () => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve()
+    })
+
+    socket.on('error', (error) => {
+      clearTimeout(timer)
+      socket.destroy()
+      reject(error)
+    })
+  })
 }

@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server"
+import os from "os"
 import { exec } from "child_process"
 import { promisify } from "util"
-import os from "os"
 
 const execAsync = promisify(exec)
 
 export async function GET() {
   try {
-    console.log("🔍 Getting system info...")
-    
     const systemInfo = {
       platform: os.platform(),
       release: os.release(),
@@ -27,8 +25,8 @@ export async function GET() {
         isVercel: !!process.env.VERCEL,
         isDocker: false,
         isContainer: false,
-        nodeEnv: process.env.NODE_ENV,
-        platform: process.platform
+        nodeEnv: process.env.NODE_ENV || 'development',
+        platform: os.platform()
       },
       capabilities: {
         canExec: false,
@@ -46,7 +44,18 @@ export async function GET() {
       systemInfo.capabilities.canExec = false
     }
 
-    // Test for Docker
+    // Test specific commands
+    const commands = ['ping', 'nc', 'telnet']
+    for (const cmd of commands) {
+      try {
+        await execAsync(`which ${cmd}`)
+        systemInfo.capabilities[`can${cmd.charAt(0).toUpperCase() + cmd.slice(1)}` as keyof typeof systemInfo.capabilities] = true
+      } catch {
+        systemInfo.capabilities[`can${cmd.charAt(0).toUpperCase() + cmd.slice(1)}` as keyof typeof systemInfo.capabilities] = false
+      }
+    }
+
+    // Check for Docker
     try {
       await execAsync('cat /.dockerenv')
       systemInfo.environment.isDocker = true
@@ -54,7 +63,7 @@ export async function GET() {
       // Not in Docker
     }
 
-    // Test for container
+    // Check for container
     try {
       const cgroupResult = await execAsync('cat /proc/1/cgroup')
       if (cgroupResult.stdout.includes('docker') || cgroupResult.stdout.includes('containerd')) {
@@ -64,24 +73,9 @@ export async function GET() {
       // Can't read cgroup
     }
 
-    // Test network tools availability
-    if (systemInfo.capabilities.canExec) {
-      const tools = ['ping', 'nc', 'telnet']
-      for (const tool of tools) {
-        try {
-          await execAsync(`which ${tool}`)
-          systemInfo.capabilities[`can${tool.charAt(0).toUpperCase() + tool.slice(1)}`] = true
-        } catch {
-          systemInfo.capabilities[`can${tool.charAt(0).toUpperCase() + tool.slice(1)}`] = false
-        }
-      }
-    }
-
-    console.log("✅ System info collected:", systemInfo)
-    
     return NextResponse.json(systemInfo)
   } catch (error) {
-    console.error("❌ System info error:", error)
+    console.error("Error getting system info:", error)
     return NextResponse.json(
       {
         error: "Errore nel recupero informazioni sistema",

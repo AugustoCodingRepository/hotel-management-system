@@ -23,12 +23,14 @@ interface DiagnosticsResult {
     canNetcat: boolean
     canCurl: boolean
     hasNetworkTools: boolean
+    canExecCommands: boolean
   }
   connectivityTests: {
     icmpPing: { success: boolean; details: string }
     port9100: { success: boolean; details: string }
     port80: { success: boolean; details: string }
     port443: { success: boolean; details: string }
+    socketTest: { success: boolean; details: string }
   }
   systemInfo: {
     uid: string
@@ -36,6 +38,8 @@ interface DiagnosticsResult {
     hostname: string
     networkInterfaces: any
     processes: string
+    memoryUsage: any
+    environmentVariables: any
   }
 }
 
@@ -51,6 +55,8 @@ export function NetworkDiagnostics() {
     setError(null)
 
     try {
+      console.log('🔍 Starting network diagnostics...')
+      
       const response = await fetch('/api/print/network-diagnostics', {
         method: 'POST',
         headers: {
@@ -59,15 +65,18 @@ export function NetworkDiagnostics() {
         body: JSON.stringify({ printerIp }),
       })
 
+      console.log('📡 Response status:', response.status)
+      
       const data = await response.json()
+      console.log('📊 Response data:', data)
       
       if (!response.ok) {
-        throw new Error(data.error || 'Errore nella diagnostica')
+        throw new Error(data.error || `HTTP ${response.status}`)
       }
       
       setResult(data)
     } catch (error) {
-      console.error('Error running diagnostics:', error)
+      console.error('❌ Error running diagnostics:', error)
       setError(error instanceof Error ? error.message : 'Errore sconosciuto')
     } finally {
       setTesting(false)
@@ -95,6 +104,14 @@ export function NetworkDiagnostics() {
           <CardTitle>🔍 Diagnostica di Rete Avanzata</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-900 mb-2">🚨 Problema Rilevato</h4>
+            <p className="text-sm text-blue-800">
+              Il comando <code className="bg-white px-1 rounded">ping</code> non è disponibile nel sistema.
+              Questo indica che siamo in un ambiente molto limitato (probabilmente Vercel).
+            </p>
+          </div>
+
           <div className="flex gap-2">
             <Input
               type="text"
@@ -115,6 +132,9 @@ export function NetworkDiagnostics() {
             <div className="bg-red-50 p-4 rounded-lg">
               <h4 className="font-medium text-red-900 mb-2">❌ Errore</h4>
               <p className="text-sm text-red-800">{error}</p>
+              <div className="text-xs text-red-600 mt-2">
+                Controlla la console del browser per maggiori dettagli.
+              </div>
             </div>
           )}
 
@@ -152,19 +172,23 @@ export function NetworkDiagnostics() {
 
                   {result.environment.isVercel && (
                     <div className="bg-red-50 p-4 rounded-lg">
-                      <h4 className="font-medium text-red-900 mb-2">🚨 Problema Identificato: Vercel</h4>
-                      <p className="text-sm text-red-800">
-                        Vercel ha severe limitazioni di rete. Le connessioni dirette a dispositivi locali 
-                        (come stampanti) sono bloccate per motivi di sicurezza.
+                      <h4 className="font-medium text-red-900 mb-2">🚨 Problema Confermato: Vercel</h4>
+                      <p className="text-sm text-red-800 mb-2">
+                        Vercel ha severe limitazioni di rete. I comandi di sistema come <code>ping</code> non sono disponibili.
+                        Le connessioni dirette a dispositivi locali (come stampanti) sono bloccate.
+                      </p>
+                      <p className="text-sm text-red-800 font-medium">
+                        ❌ La stampa diretta NON funzionerà su Vercel.
                       </p>
                     </div>
                   )}
 
-                  {(result.environment.isDocker || result.environment.isContainer) && (
+                  {!result.networkCapabilities.canExecCommands && !result.environment.isVercel && (
                     <div className="bg-yellow-50 p-4 rounded-lg">
-                      <h4 className="font-medium text-yellow-900 mb-2">⚠️ Container Rilevato</h4>
+                      <h4 className="font-medium text-yellow-900 mb-2">⚠️ Ambiente Serverless Rilevato</h4>
                       <p className="text-sm text-yellow-800">
-                        Il server è in un container. Questo può limitare l'accesso alla rete locale.
+                        Non è possibile eseguire comandi di sistema. Questo indica un ambiente serverless
+                        con limitazioni di sicurezza.
                       </p>
                     </div>
                   )}
@@ -174,10 +198,14 @@ export function NetworkDiagnostics() {
               {/* Network Capabilities */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">🛠️ Strumenti di Rete Disponibili</CardTitle>
+                  <CardTitle className="text-lg">🛠️ Capacità di Rete</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                    <div className="flex items-center gap-2">
+                      {getStatusBadge(result.networkCapabilities.canExecCommands)}
+                      <span className="text-sm">Esecuzione Comandi</span>
+                    </div>
                     <div className="flex items-center gap-2">
                       {getStatusBadge(result.networkCapabilities.canPing)}
                       <span className="text-sm">ping</span>
@@ -196,12 +224,12 @@ export function NetworkDiagnostics() {
                     </div>
                   </div>
 
-                  {!result.networkCapabilities.hasNetworkTools && (
-                    <div className="bg-red-50 p-4 rounded-lg mt-4">
-                      <h4 className="font-medium text-red-900 mb-2">❌ Nessuno Strumento di Rete</h4>
+                  {!result.networkCapabilities.canExecCommands && (
+                    <div className="bg-red-50 p-4 rounded-lg">
+                      <h4 className="font-medium text-red-900 mb-2">❌ Nessun Comando di Sistema</h4>
                       <p className="text-sm text-red-800">
-                        Il server non ha accesso agli strumenti di rete di base. Questo conferma che 
-                        siamo in un ambiente molto limitato (probabilmente Vercel).
+                        Il server non può eseguire comandi di sistema. Questo conferma che siamo
+                        in un ambiente serverless molto limitato.
                       </p>
                     </div>
                   )}
@@ -217,6 +245,14 @@ export function NetworkDiagnostics() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-3 bg-gray-50 rounded">
                       <div>
+                        <div className="font-medium">Socket Test (Node.js puro)</div>
+                        <div className="text-sm text-gray-600">{result.connectivityTests.socketTest.details}</div>
+                      </div>
+                      {getStatusBadge(result.connectivityTests.socketTest.success)}
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                      <div>
                         <div className="font-medium">Ping ICMP</div>
                         <div className="text-sm text-gray-600">{result.connectivityTests.icmpPing.details}</div>
                       </div>
@@ -230,55 +266,45 @@ export function NetworkDiagnostics() {
                       </div>
                       {getStatusBadge(result.connectivityTests.port9100.success)}
                     </div>
-                    
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                      <div>
-                        <div className="font-medium">Porta 80 (HTTP)</div>
-                        <div className="text-sm text-gray-600">{result.connectivityTests.port80.details}</div>
-                      </div>
-                      {getStatusBadge(result.connectivityTests.port80.success)}
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                      <div>
-                        <div className="font-medium">Porta 443 (HTTPS)</div>
-                        <div className="text-sm text-gray-600">{result.connectivityTests.port443.details}</div>
-                      </div>
-                      {getStatusBadge(result.connectivityTests.port443.success)}
-                    </div>
                   </div>
+
+                  {result.connectivityTests.socketTest.success && (
+                    <div className="bg-green-50 p-4 rounded-lg mt-4">
+                      <h4 className="font-medium text-green-900 mb-2">✅ Socket Test Riuscito!</h4>
+                      <p className="text-sm text-green-800">
+                        Il test socket Node.js è riuscito. Questo significa che la stampante è raggiungibile
+                        anche senza comandi di sistema!
+                      </p>
+                    </div>
+                  )}
+
+                  {!result.connectivityTests.socketTest.success && (
+                    <div className="bg-red-50 p-4 rounded-lg mt-4">
+                      <h4 className="font-medium text-red-900 mb-2">❌ Connessione Fallita</h4>
+                      <p className="text-sm text-red-800">
+                        Anche il test socket Node.js è fallito. La stampante non è raggiungibile
+                        da questo ambiente di hosting.
+                      </p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
-              {/* System Info */}
+              {/* Environment Variables */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">ℹ️ Informazioni Sistema</CardTitle>
+                  <CardTitle className="text-lg">🔧 Variabili d'Ambiente</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div>
-                      <div className="font-medium">User ID</div>
-                      <div className="text-sm text-gray-600">{result.systemInfo.uid}</div>
-                    </div>
-                    <div>
-                      <div className="font-medium">Group ID</div>
-                      <div className="text-sm text-gray-600">{result.systemInfo.gid}</div>
-                    </div>
-                  </div>
-
-                  <div className="mb-4">
-                    <div className="font-medium mb-2">Interfacce di Rete</div>
-                    <div className="text-xs text-gray-600 font-mono bg-gray-100 p-2 rounded max-h-32 overflow-y-auto">
-                      {JSON.stringify(result.systemInfo.networkInterfaces, null, 2)}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="font-medium mb-2">Processi (primi 10)</div>
-                    <div className="text-xs text-gray-600 font-mono bg-gray-100 p-2 rounded max-h-32 overflow-y-auto">
-                      {result.systemInfo.processes}
-                    </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {Object.entries(result.systemInfo.environmentVariables).map(([key, value]) => (
+                      <div key={key}>
+                        <div className="font-medium text-sm">{key}</div>
+                        <div className="text-xs text-gray-600 font-mono bg-gray-100 p-1 rounded">
+                          {value || 'undefined'}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -286,24 +312,26 @@ export function NetworkDiagnostics() {
               {/* Solutions */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">💡 Soluzioni Possibili</CardTitle>
+                  <CardTitle className="text-lg">💡 Soluzioni</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {result.environment.isVercel ? (
                     <div className="bg-blue-50 p-4 rounded-lg">
                       <h4 className="font-medium text-blue-900 mb-2">🔧 Soluzioni per Vercel:</h4>
-                      <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-                        <li><strong>VPS/Server dedicato</strong>: Sposta l'app su un VPS (DigitalOcean, Linode)</li>
-                        <li><strong>Vercel + Proxy</strong>: Usa un server proxy nella rete locale</li>
-                        <li><strong>Webhook</strong>: Invia i dati a un server locale via webhook</li>
-                        <li><strong>Cloud Print</strong>: Usa servizi di stampa cloud</li>
+                      <ul className="text-sm text-blue-800 space-y-2 list-disc list-inside">
+                        <li><strong>VPS/Server dedicato</strong>: Sposta l'app su DigitalOcean, Linode, o Hetzner</li>
+                        <li><strong>Railway/Render</strong>: Hosting con meno limitazioni di rete</li>
+                        <li><strong>Server locale</strong>: Esegui l'app su un computer nella stessa rete della stampante</li>
+                        <li><strong>Proxy server</strong>: Crea un server proxy nella rete locale</li>
+                        <li><strong>Webhook</strong>: Invia i dati di stampa a un server locale via webhook</li>
                       </ul>
                     </div>
-                  ) : result.connectivityTests.port9100.success ? (
+                  ) : result.connectivityTests.socketTest.success ? (
                     <div className="bg-green-50 p-4 rounded-lg">
                       <h4 className="font-medium text-green-900 mb-2">✅ Buone notizie!</h4>
                       <p className="text-sm text-green-800">
-                        La porta 9100 è raggiungibile. La stampa dovrebbe funzionare anche se il ping ICMP fallisce.
+                        Il socket test è riuscito. La stampa dovrebbe funzionare usando solo Node.js
+                        senza comandi di sistema.
                       </p>
                     </div>
                   ) : (
@@ -311,9 +339,9 @@ export function NetworkDiagnostics() {
                       <h4 className="font-medium text-yellow-900 mb-2">🔧 Possibili soluzioni:</h4>
                       <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
                         <li>Verifica che la stampante sia accesa e connessa</li>
-                        <li>Controlla il firewall del server</li>
-                        <li>Verifica la configurazione di rete del container</li>
-                        <li>Prova con un server locale invece del cloud</li>
+                        <li>Controlla che server e stampante siano sulla stessa rete</li>
+                        <li>Prova con un hosting diverso (non serverless)</li>
+                        <li>Usa un server locale per la stampa</li>
                       </ul>
                     </div>
                   )}
