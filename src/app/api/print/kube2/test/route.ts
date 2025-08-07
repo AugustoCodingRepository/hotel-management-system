@@ -1,152 +1,132 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { exec } from "child_process"
 import { promisify } from "util"
-import os from "os"
+import net from "net"
 
 const execAsync = promisify(exec)
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const { printerIp } = await request.json()
+    const { printerIp = '10.0.0.55', port = 9100 } = await request.json()
+    
+    console.log(`🔍 Testing connection to ${printerIp}:${port}`)
+    
+    const testResults = {
+      timestamp: new Date().toISOString(),
+      printerIp,
+      port,
+      tests: {
+        socketConnection: { success: false, details: '', duration: 0 },
+        pingTest: { success: false, details: '', duration: 0 },
+        portScan: { success: false, details: '', duration: 0 },
+        systemInfo: { success: false, details: '', duration: 0 }
+      }
+    }
 
-    console.log(`🧪 Testing printer connection using system tools at ${printerIp}`)
-    console.log(`🖥️ Running on: ${os.platform()} ${os.release()}`)
-    console.log(`🌐 Environment: ${process.env.NODE_ENV}, Vercel: ${!!process.env.VERCEL}`)
+    // Test 1: Socket Connection
+    const socketStart = Date.now()
+    try {
+      await testSocketConnection(printerIp, port)
+      testResults.tests.socketConnection = {
+        success: true,
+        details: `Socket connection successful to ${printerIp}:${port}`,
+        duration: Date.now() - socketStart
+      }
+    } catch (error) {
+      testResults.tests.socketConnection = {
+        success: false,
+        details: `Socket connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        duration: Date.now() - socketStart
+      }
+    }
 
-    const result = await testPrinterWithSystemTools(printerIp)
+    // Test 2: Ping Test
+    const pingStart = Date.now()
+    try {
+      const pingResult = await execAsync(`ping -c 1 -W 3000 ${printerIp}`)
+      testResults.tests.pingTest = {
+        success: true,
+        details: `Ping successful: ${pingResult.stdout.split('\n')[1] || 'OK'}`,
+        duration: Date.now() - pingStart
+      }
+    } catch (error: any) {
+      testResults.tests.pingTest = {
+        success: false,
+        details: `Ping failed: ${error.stderr || error.message}`,
+        duration: Date.now() - pingStart
+      }
+    }
 
-    return NextResponse.json(result)
+    // Test 3: Port Scan
+    const portStart = Date.now()
+    try {
+      const portResult = await execAsync(`timeout 5 nc -z -v ${printerIp} ${port}`)
+      testResults.tests.portScan = {
+        success: true,
+        details: `Port ${port} is open: ${portResult.stderr || 'Connected'}`,
+        duration: Date.now() - portStart
+      }
+    } catch (error: any) {
+      testResults.tests.portScan = {
+        success: false,
+        details: `Port ${port} is closed: ${error.stderr || error.message}`,
+        duration: Date.now() - portStart
+      }
+    }
+
+    // Test 4: System Info
+    const sysStart = Date.now()
+    try {
+      const hostname = await execAsync('hostname')
+      const whoami = await execAsync('whoami')
+      testResults.tests.systemInfo = {
+        success: true,
+        details: `Hostname: ${hostname.stdout.trim()}, User: ${whoami.stdout.trim()}`,
+        duration: Date.now() - sysStart
+      }
+    } catch (error: any) {
+      testResults.tests.systemInfo = {
+        success: false,
+        details: `System info failed: ${error.message}`,
+        duration: Date.now() - sysStart
+      }
+    }
+
+    console.log("🔍 Test results:", testResults)
+    
+    return NextResponse.json(testResults)
   } catch (error) {
-    console.error("❌ Test API error:", error)
+    console.error("❌ Test error:", error)
     return NextResponse.json(
       {
-        success: false,
-        message: "Errore interno del server",
+        error: "Errore nel test di connessione",
         details: error instanceof Error ? error.message : "Errore sconosciuto"
       },
-      { status: 500 },
+      { status: 500 }
     )
   }
 }
 
-async function testPrinterWithSystemTools(printerIp: string): Promise<{ success: boolean; message: string; details?: string }> {
-  try {
-    console.log(`🔍 Testing with system tools: ${printerIp}`)
-    
-    // Prima verifica le interfacce di rete del server
-    const interfaces = os.networkInterfaces()
-    console.log("🌐 Server network interfaces:", Object.keys(interfaces))
-    
-    // Test 1: Ping ICMP con output dettagliato
-    try {
-      console.log("🏓 Testing ICMP ping...")
-      
-      // Prova diversi formati di ping per compatibilità
-      let pingCommand = `ping -c 1 -W 3000 ${printerIp}`
-      
-      // Su alcuni sistemi il timeout è -w invece di -W
-      if (os.platform() === 'linux') {
-        pingCommand = `ping -c 1 -w 3 ${printerIp}`
-      }
-      
-      console.log(`Executing: ${pingCommand}`)
-      const pingResult = await execAsync(pingCommand)
-      
-      console.log("✅ Ping ICMP successful")
-      console.log("Ping stdout:", pingResult.stdout)
-      console.log("Ping stderr:", pingResult.stderr)
-      
-      // Estrai il tempo di risposta dal ping
-      const pingTime = pingResult.stdout.match(/time=(\d+\.?\d*)/)?.[1] || 'unknown'
-      
-    } catch (pingError: any) {
-      console.log("❌ Ping ICMP failed")
-      console.log("Ping error stdout:", pingError.stdout)
-      console.log("Ping error stderr:", pingError.stderr)
-      console.log("Ping error code:", pingError.code)
-      
-      // Prova un ping alternativo
-      try {
-        console.log("🔄 Trying alternative ping format...")
-        const altPingResult = await execAsync(`ping -c 1 ${printerIp}`)
-        console.log("✅ Alternative ping successful:", altPingResult.stdout)
-      } catch (altPingError: any) {
-        console.log("❌ Alternative ping also failed:", altPingError.stderr)
-        
-        return {
-          success: false,
-          message: "Ping fallito dal server",
-          details: `Il server non riesce a pingare ${printerIp}.\n\nDettagli errore:\n${pingError.stderr || pingError.message}\n\nQuesto può accadere se:\n- Il server è in un container con restrizioni di rete\n- Vercel/hosting blocca ICMP\n- Firewall del server blocca ping in uscita\n\nProva il test della porta 9100 direttamente.`
-        }
-      }
-    }
+function testSocketConnection(host: string, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = new net.Socket()
+    const timeout = 5000
 
-    // Test 2: Test della porta 9100 con timeout breve
-    try {
-      console.log("📡 Testing port 9100 connectivity...")
-      
-      // Prova con netcat se disponibile
-      try {
-        const ncResult = await execAsync(`timeout 5 nc -z -v ${printerIp} 9100`)
-        console.log("✅ Port 9100 is open (netcat)")
-        console.log("NC output:", ncResult.stdout, ncResult.stderr)
-        
-        return {
-          success: true,
-          message: "Connessione porta 9100 OK",
-          details: "La porta 9100 è aperta e raggiungibile. La stampante dovrebbe funzionare."
-        }
-      } catch (ncError: any) {
-        console.log("❌ Netcat test failed:", ncError.stderr)
-        
-        // Prova con telnet
-        try {
-          console.log("📞 Trying telnet...")
-          const telnetResult = await execAsync(`timeout 5 bash -c "echo '' | telnet ${printerIp} 9100"`)
-          console.log("✅ Telnet successful")
-          
-          return {
-            success: true,
-            message: "Connessione telnet OK",
-            details: "Telnet alla porta 9100 funziona. La stampante è raggiungibile."
-          }
-        } catch (telnetError: any) {
-          console.log("❌ Telnet failed:", telnetError.stderr)
-          
-          // Test finale con curl
-          try {
-            console.log("🌐 Trying HTTP connection...")
-            const curlResult = await execAsync(`timeout 5 curl -v --connect-timeout 3 http://${printerIp}:9100/`)
-            console.log("✅ HTTP connection successful")
-            
-            return {
-              success: true,
-              message: "Connessione HTTP OK",
-              details: "La stampante risponde su HTTP. Potrebbe essere configurata diversamente."
-            }
-          } catch (curlError: any) {
-            console.log("❌ All connection tests failed")
-            
-            return {
-              success: false,
-              message: "Porta 9100 non raggiungibile dal server",
-              details: `Tutti i test di connessione sono falliti:\n\n- netcat: ${ncError.stderr || ncError.message}\n- telnet: ${telnetError.stderr || telnetError.message}\n- curl: ${curlError.stderr || curlError.message}\n\nLa stampante potrebbe:\n- Usare una porta diversa\n- Avere un firewall attivo\n- Essere configurata solo per protocolli specifici`
-            }
-          }
-        }
-      }
-    } catch (error: any) {
-      return {
-        success: false,
-        message: "Errore test connettività",
-        details: `Errore durante i test di connettività: ${error.message}`
-      }
-    }
-  } catch (error) {
-    return {
-      success: false,
-      message: "Errore test sistema",
-      details: error instanceof Error ? error.message : "Errore sconosciuto"
-    }
-  }
+    const timer = setTimeout(() => {
+      socket.destroy()
+      reject(new Error(`Connection timeout after ${timeout}ms`))
+    }, timeout)
+
+    socket.connect(port, host, () => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve()
+    })
+
+    socket.on('error', (error) => {
+      clearTimeout(timer)
+      socket.destroy()
+      reject(error)
+    })
+  })
 }

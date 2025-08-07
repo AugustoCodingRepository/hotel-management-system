@@ -43,10 +43,12 @@ export function NetworkDiagnostics() {
   const [printerIp, setPrinterIp] = useState('10.0.0.55')
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<DiagnosticsResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const runDiagnostics = async () => {
     setTesting(true)
     setResult(null)
+    setError(null)
 
     try {
       const response = await fetch('/api/print/network-diagnostics', {
@@ -58,9 +60,15 @@ export function NetworkDiagnostics() {
       })
 
       const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Errore nella diagnostica')
+      }
+      
       setResult(data)
     } catch (error) {
       console.error('Error running diagnostics:', error)
+      setError(error instanceof Error ? error.message : 'Errore sconosciuto')
     } finally {
       setTesting(false)
     }
@@ -102,6 +110,13 @@ export function NetworkDiagnostics() {
               {testing ? 'Analizzando...' : 'Avvia Diagnostica'}
             </Button>
           </div>
+
+          {error && (
+            <div className="bg-red-50 p-4 rounded-lg">
+              <h4 className="font-medium text-red-900 mb-2">❌ Errore</h4>
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
 
           {result && (
             <div className="space-y-6">
