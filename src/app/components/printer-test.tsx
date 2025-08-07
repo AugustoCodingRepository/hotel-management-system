@@ -42,67 +42,36 @@ export function PrinterTest() {
     }
   }
 
-  const scanNetwork = async () => {
+  const testActualPrint = async () => {
     setTesting(true)
     setResult(null)
 
     try {
-      const baseIp = printerIp.split('.').slice(0, 3).join('.')
-      const results = []
-      
-      setResult({
-        success: false,
-        message: 'Scansione in corso...',
-        details: `Scansionando ${baseIp}.1-254 sulla porta 9100`
+      // Test con ricevuta semplice
+      const testReceipt = generateSimpleTestReceipt()
+
+      const response = await fetch('/api/print/kube2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          printerIp,
+          content: testReceipt,
+          tableNumber: 99,
+        }),
       })
 
-      // Testa alcuni IP comuni
-      const commonIPs = [
-        `${baseIp}.55`,  // IP attuale
-        `${baseIp}.100`, // IP comune stampanti
-        `${baseIp}.101`,
-        `${baseIp}.200`,
-        `${baseIp}.50`,
-        `${baseIp}.10`,
-        `${baseIp}.1`,   // Gateway
-      ]
-
-      for (const ip of commonIPs) {
-        try {
-          const response = await fetch('/api/print/kube2/test', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ printerIp: ip }),
-          })
-
-          const data = await response.json()
-          if (data.success) {
-            results.push(ip)
-          }
-        } catch (error) {
-          // Ignora errori durante la scansione
-        }
-      }
-
-      if (results.length > 0) {
-        setResult({
-          success: true,
-          message: `Trovate ${results.length} stampanti`,
-          details: `Stampanti trovate: ${results.join(', ')}`
-        })
-      } else {
-        setResult({
-          success: false,
-          message: 'Nessuna stampante trovata',
-          details: 'Prova a verificare manualmente l\'IP dal pannello della stampante'
-        })
-      }
+      const data = await response.json()
+      setResult({
+        success: data.success,
+        message: data.success ? 'Test di stampa completato!' : 'Test di stampa fallito',
+        details: data.error || 'Ricevuta di test inviata alla stampante KUBE2'
+      })
     } catch (error) {
       setResult({
         success: false,
-        message: 'Errore durante la scansione',
+        message: 'Errore test stampa',
         details: error instanceof Error ? error.message : 'Errore sconosciuto'
       })
     } finally {
@@ -110,56 +79,98 @@ export function PrinterTest() {
     }
   }
 
-  const testDifferentPort = async () => {
+  const testRawPrint = async () => {
     setTesting(true)
     setResult(null)
 
-    const ports = [9100, 515, 631, 80, 23] // Porte comuni per stampanti
-    const results = []
+    try {
+      // Test con comandi raw minimi
+      const rawContent = "\x1B@TEST KUBE II\n\nStampa funzionante!\n\n\n\x1DV\x00"
 
-    for (const port of ports) {
-      try {
-        // Simuliamo test su porte diverse (in realtà testiamo sempre 9100 ma mostriamo il concetto)
-        const response = await fetch('/api/print/kube2/test', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ printerIp }),
-        })
-
-        const data = await response.json()
-        if (data.success) {
-          results.push(`${port} (ESC/POS)`)
-          break // Trovata, fermiamo la ricerca
-        }
-      } catch (error) {
-        // Continua con la porta successiva
-      }
-    }
-
-    if (results.length > 0) {
-      setResult({
-        success: true,
-        message: 'Porta trovata',
-        details: `La stampante risponde sulla porta: ${results[0]}`
+      const response = await fetch('/api/print/kube2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          printerIp,
+          content: rawContent,
+          tableNumber: 88,
+        }),
       })
-    } else {
+
+      const data = await response.json()
+      setResult({
+        success: data.success,
+        message: data.success ? 'Test raw completato!' : 'Test raw fallito',
+        details: data.error || 'Comandi raw inviati alla stampante'
+      })
+    } catch (error) {
       setResult({
         success: false,
-        message: 'Nessuna porta risponde',
-        details: 'La stampante potrebbe essere spenta o su un IP diverso'
+        message: 'Errore test raw',
+        details: error instanceof Error ? error.message : 'Errore sconosciuto'
       })
+    } finally {
+      setTesting(false)
     }
+  }
 
-    setTesting(false)
+  const generateSimpleTestReceipt = () => {
+    const ESC = "\x1B"
+    const GS = "\x1D"
+    
+    let content = ""
+    
+    // Reset
+    content += ESC + "@"
+    
+    // Centro
+    content += ESC + "a" + "\x01"
+    content += ESC + "!" + "\x18" // Grande
+    content += "TEST KUBE II\n"
+    content += ESC + "!" + "\x00" // Normale
+    content += "Sistema Hotel\n"
+    content += "\n"
+    
+    // Sinistra
+    content += ESC + "a" + "\x00"
+    content += "TAVOLO: 99\n"
+    content += `DATA: ${new Date().toLocaleDateString("it-IT")}\n`
+    content += `ORA: ${new Date().toLocaleTimeString("it-IT")}\n`
+    content += "\n"
+    
+    content += "--------------------------------\n"
+    content += "1x Test Item             EUR 5.00\n"
+    content += "1x Caffe                 EUR 1.50\n"
+    content += "--------------------------------\n"
+    
+    // Totale a destra
+    content += ESC + "a" + "\x02"
+    content += ESC + "!" + "\x08"
+    content += "TOTALE: EUR 6.50\n"
+    content += ESC + "!" + "\x00"
+    
+    // Centro
+    content += ESC + "a" + "\x01"
+    content += "================================\n"
+    content += "\n"
+    content += "Test completato!\n"
+    content += "Grazie\n"
+    content += "\n"
+    content += "\n"
+    
+    // Taglia carta
+    content += GS + "V" + "\x00"
+    
+    return content
   }
 
   return (
     <div className="max-w-2xl mx-auto">
       <Card>
         <CardHeader>
-          <CardTitle>Diagnosi Stampante KUBE2</CardTitle>
+          <CardTitle>Test Stampante KUBE2 - Diagnosi Avanzata</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -178,23 +189,23 @@ export function PrinterTest() {
               disabled={testing || !printerIp}
               className="w-full"
             >
-              {testing ? 'Testing...' : 'Test Base'}
+              {testing ? 'Testing...' : '1. Test Connessione'}
             </Button>
             <Button 
-              onClick={scanNetwork} 
+              onClick={testRawPrint} 
               disabled={testing || !printerIp}
               variant="outline"
               className="w-full"
             >
-              {testing ? 'Scanning...' : 'Scansiona Rete'}
+              {testing ? 'Printing...' : '2. Test Raw'}
             </Button>
             <Button 
-              onClick={testDifferentPort} 
+              onClick={testActualPrint} 
               disabled={testing || !printerIp}
               variant="outline"
               className="w-full"
             >
-              {testing ? 'Testing...' : 'Test Porte'}
+              {testing ? 'Printing...' : '3. Test Ricevuta'}
             </Button>
           </div>
 
@@ -217,35 +228,33 @@ export function PrinterTest() {
           )}
 
           <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">🔍 Passi per la diagnosi:</h4>
+            <h4 className="font-medium text-blue-900 mb-2">🔍 Sequenza di test:</h4>
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li><strong>Test Base</strong>: Verifica se l'IP risponde sulla porta 9100</li>
-              <li><strong>Scansiona Rete</strong>: Cerca stampanti su IP comuni della rete</li>
-              <li><strong>Test Porte</strong>: Verifica se la stampante usa porte diverse</li>
+              <li><strong>Test Connessione</strong>: Verifica socket e comandi ESC/POS base</li>
+              <li><strong>Test Raw</strong>: Invia comandi minimi per verificare la stampa</li>
+              <li><strong>Test Ricevuta</strong>: Stampa una ricevuta completa di test</li>
             </ol>
           </div>
 
           <div className="bg-yellow-50 p-4 rounded-lg">
-            <h4 className="font-medium text-yellow-900 mb-2">💡 Se tutti i test falliscono:</h4>
+            <h4 className="font-medium text-yellow-900 mb-2">💡 Se il ping funziona ma i test falliscono:</h4>
             <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-              <li>Controlla che la stampante sia accesa (LED verdi)</li>
-              <li>Verifica l'IP dal pannello della stampante (Menu → Network)</li>
-              <li>Assicurati che server e stampante siano sulla stessa rete</li>
-              <li>Prova a pingare l'IP dal terminale: <code>ping {printerIp}</code></li>
-              <li>Controlla se ci sono firewall che bloccano la porta 9100</li>
+              <li>La porta 9100 potrebbe essere bloccata da un firewall</li>
+              <li>La stampante potrebbe non supportare connessioni TCP dirette</li>
+              <li>Potrebbe essere necessario un driver specifico</li>
+              <li>La stampante potrebbe essere in modalità sleep/standby</li>
+              <li>Verifica se altri software riescono a stampare</li>
             </ul>
           </div>
 
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h4 className="font-medium text-gray-900 mb-2">🖨️ IP comuni stampanti:</h4>
-            <div className="text-sm text-gray-700 grid grid-cols-2 gap-2">
-              <div>• 10.0.0.55 (attuale)</div>
-              <div>• 192.168.1.100</div>
-              <div>• 192.168.0.100</div>
-              <div>• 10.0.0.100</div>
-              <div>• 192.168.1.200</div>
-              <div>• 10.0.0.200</div>
-            </div>
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h4 className="font-medium text-green-900 mb-2">✅ Il tuo Python funziona perché:</h4>
+            <ul className="text-sm text-green-800 space-y-1 list-disc list-inside">
+              <li>Usa la stessa sequenza di comandi che ho replicato</li>
+              <li>Ha timeout e retry appropriati</li>
+              <li>Gestisce correttamente i buffer e la codifica</li>
+              <li>Questo test dovrebbe funzionare allo stesso modo</li>
+            </ul>
           </div>
         </CardContent>
       </Card>
