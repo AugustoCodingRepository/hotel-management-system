@@ -1,10 +1,8 @@
-import { PrinterTest } from '@/components/printer-test'
-
-export default function PrinterTestPage() {
+import { NetworkDiagnostics } from '@/app/components/network-diagnostics'
+export default function NetworkDiagnosticsPage() {
   return (
     <div className="container mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-8">Test Stampante KUBE2</h1>
-      <PrinterTest />
+      <NetworkDiagnostics />
     </div>
   )
 }
