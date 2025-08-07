@@ -1,19 +1,24 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { Socket } from "net"
+import { exec } from "child_process"
+import { promisify } from "util"
+import { writeFileSync, unlinkSync } from "fs"
+import { join } from "path"
+
+const execAsync = promisify(exec)
 
 export async function POST(request: NextRequest) {
   try {
     const { printerIp, content, tableNumber } = await request.json()
 
-    console.log(`🖨️ Printing receipt for table ${tableNumber} to KUBE2 at ${printerIp}`)
+    console.log(`🖨️ Printing receipt for table ${tableNumber} using system tools`)
 
-    const result = await printToKube2Minimal(printerIp, content)
+    const result = await printWithSystemTools(printerIp, content)
 
     if (result.success) {
       console.log("✅ Receipt sent to printer successfully")
       return NextResponse.json({
         success: true,
-        message: "Conto inviato alla stampante KUBE2",
+        message: "Conto inviato alla stampante",
       })
     } else {
       console.error("❌ Print failed:", result.error)
@@ -37,104 +42,74 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Stampa minima senza retry - per debug
-async function printToKube2Minimal(printerIp: string, content: string): Promise<{ success: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    console.log(`🔌 Connecting to printer at ${printerIp}:9100 for printing`)
+async function printWithSystemTools(printerIp: string, content: string): Promise<{ success: boolean; error?: string }> {
+  const tempFile = join('/tmp', `receipt_${Date.now()}.txt`)
+  
+  try {
+    console.log(`📝 Creating temp file: ${tempFile}`)
     
-    const socket = new Socket()
-    socket.setTimeout(5000) // Timeout breve per debug
+    // Scrivi il contenuto in un file temporaneo
+    writeFileSync(tempFile, content, 'binary')
     
-    let connected = false
-    let dataSent = false
-
-    const cleanup = () => {
+    // Metodo 1: Prova con netcat (nc)
+    try {
+      console.log("🔌 Trying with netcat...")
+      await execAsync(`timeout 10 nc ${printerIp} 9100 < ${tempFile}`)
+      
+      // Cleanup
+      unlinkSync(tempFile)
+      
+      return { success: true }
+    } catch (ncError) {
+      console.log("❌ Netcat failed, trying curl...")
+      
+      // Metodo 2: Prova con curl
       try {
-        if (socket && !socket.destroyed) {
-          socket.end()
-        }
-      } catch (e) {
+        await execAsync(`timeout 10 curl -X POST --data-binary @${tempFile} http://${printerIp}:9100/`)
+        
+        // Cleanup
+        unlinkSync(tempFile)
+        
+        return { success: true }
+      } catch (curlError) {
+        console.log("❌ Curl failed, trying lp command...")
+        
+        // Metodo 3: Prova con lp (Linux printing system)
         try {
-          socket.destroy()
-        } catch (e2) {
-          // Ignora errori
+          await execAsync(`timeout 10 lp -d ${printerIp} -o raw ${tempFile}`)
+          
+          // Cleanup
+          unlinkSync(tempFile)
+          
+          return { success: true }
+        } catch (lpError) {
+          console.log("❌ All system methods failed")
+          
+          // Cleanup
+          try {
+            unlinkSync(tempFile)
+          } catch (e) {
+            // Ignora errori di cleanup
+          }
+          
+          return { 
+            success: false, 
+            error: `Tutti i metodi di sistema falliti: nc, curl, lp` 
+          }
         }
       }
     }
-
-    const timeout = setTimeout(() => {
-      if (!connected) {
-        console.log("⏰ Print connection timeout")
-        cleanup()
-        resolve({ success: false, error: "Timeout connessione per stampa" })
-      } else if (!dataSent) {
-        console.log("⏰ Print data timeout")
-        cleanup()
-        resolve({ success: false, error: "Timeout invio dati stampa" })
-      }
-    }, 5000)
-
-    socket.connect(9100, printerIp, () => {
-      connected = true
-      console.log(`✅ Connected to printer for printing`)
-      
-      try {
-        // Invia direttamente il contenuto senza reset
-        console.log("📤 Sending print data...")
-        
-        socket.write(content, "binary", (error) => {
-          dataSent = true
-          
-          if (error) {
-            console.error("❌ Error sending print data:", error)
-            clearTimeout(timeout)
-            cleanup()
-            resolve({ success: false, error: `Errore invio dati: ${error.message}` })
-            return
-          }
-
-          console.log("✅ Print data sent successfully")
-          
-          // Attendi un momento per la stampa
-          setTimeout(() => {
-            clearTimeout(timeout)
-            cleanup()
-            resolve({ success: true })
-          }, 1000)
-        })
-      } catch (error) {
-        console.error("❌ Error in print sequence:", error)
-        clearTimeout(timeout)
-        cleanup()
-        resolve({ success: false, error: `Errore sequenza stampa: ${error instanceof Error ? error.message : 'Errore sconosciuto'}` })
-      }
-    })
-
-    socket.on("error", (error: any) => {
-      console.error("❌ Print socket error:", error)
-      clearTimeout(timeout)
-      cleanup()
-      
-      let errorMessage = `Errore connessione stampa: ${error.message}`
-      if (error.code === "ECONNREFUSED") {
-        errorMessage = "Stampante rifiuta connessione per stampa"
-      } else if (error.code === "ETIMEDOUT") {
-        errorMessage = "Timeout durante stampa"
-      }
-      
-      resolve({ success: false, error: errorMessage })
-    })
-
-    socket.on("close", () => {
-      console.log("🔌 Print connection closed")
-      clearTimeout(timeout)
-    })
-
-    socket.on("timeout", () => {
-      console.log("⏰ Print socket timeout")
-      clearTimeout(timeout)
-      cleanup()
-      resolve({ success: false, error: "Timeout socket durante stampa" })
-    })
-  })
+  } catch (error) {
+    // Cleanup in caso di errore
+    try {
+      unlinkSync(tempFile)
+    } catch (e) {
+      // Ignora errori di cleanup
+    }
+    
+    return { 
+      success: false, 
+      error: `Errore sistema: ${error instanceof Error ? error.message : 'Errore sconosciuto'}` 
+    }
+  }
 }

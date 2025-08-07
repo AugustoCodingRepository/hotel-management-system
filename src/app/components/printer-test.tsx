@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/app/components/ui/button'
 import { Input } from '@/app/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card'
@@ -11,12 +11,40 @@ interface TestResult {
   details?: string
 }
 
+interface SystemInfo {
+  platform: string
+  nodeVersion: string
+  environment: string
+  isVercel: boolean
+  availableCommands: { [key: string]: boolean }
+  defaultRoute: string
+  networkInterfaces: string
+}
+
 export function PrinterTest() {
   const [printerIp, setPrinterIp] = useState('10.0.0.55')
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
+  const [loadingSystemInfo, setLoadingSystemInfo] = useState(true)
 
-  const testTcpConnection = async () => {
+  useEffect(() => {
+    loadSystemInfo()
+  }, [])
+
+  const loadSystemInfo = async () => {
+    try {
+      const response = await fetch('/api/print/system-info')
+      const data = await response.json()
+      setSystemInfo(data)
+    } catch (error) {
+      console.error('Error loading system info:', error)
+    } finally {
+      setLoadingSystemInfo(false)
+    }
+  }
+
+  const testSystemTools = async () => {
     setTesting(true)
     setResult(null)
 
@@ -42,13 +70,12 @@ export function PrinterTest() {
     }
   }
 
-  const testRawPrint = async () => {
+  const testSystemPrint = async () => {
     setTesting(true)
     setResult(null)
 
     try {
-      // Test con solo testo senza comandi ESC/POS
-      const rawText = "TEST STAMPA SEMPLICE\nSenza comandi ESC/POS\nSolo testo normale\n\n\n"
+      const testContent = generateSystemTestReceipt()
 
       const response = await fetch('/api/print/kube2', {
         method: 'POST',
@@ -57,21 +84,21 @@ export function PrinterTest() {
         },
         body: JSON.stringify({
           printerIp,
-          content: rawText,
-          tableNumber: 77,
+          content: testContent,
+          tableNumber: 99,
         }),
       })
 
       const data = await response.json()
       setResult({
         success: data.success,
-        message: data.success ? 'Test testo semplice OK!' : 'Test testo fallito',
-        details: data.error || 'Testo semplice inviato senza comandi ESC/POS'
+        message: data.success ? 'Stampa sistema OK!' : 'Stampa sistema fallita',
+        details: data.error || 'Usati comandi di sistema (nc/curl/lp)'
       })
     } catch (error) {
       setResult({
         success: false,
-        message: 'Errore test testo',
+        message: 'Errore stampa sistema',
         details: error instanceof Error ? error.message : 'Errore sconosciuto'
       })
     } finally {
@@ -79,80 +106,7 @@ export function PrinterTest() {
     }
   }
 
-  const testEscPosPrint = async () => {
-    setTesting(true)
-    setResult(null)
-
-    try {
-      // Test con comandi ESC/POS minimi
-      const escPosContent = "\x1B@TEST ESC/POS\n\nComandi stampante\n\n\n\x1DV\x00"
-
-      const response = await fetch('/api/print/kube2', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          printerIp,
-          content: escPosContent,
-          tableNumber: 66,
-        }),
-      })
-
-      const data = await response.json()
-      setResult({
-        success: data.success,
-        message: data.success ? 'Test ESC/POS OK!' : 'Test ESC/POS fallito',
-        details: data.error || 'Comandi ESC/POS inviati (reset + taglio)'
-      })
-    } catch (error) {
-      setResult({
-        success: false,
-        message: 'Errore test ESC/POS',
-        details: error instanceof Error ? error.message : 'Errore sconosciuto'
-      })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  const testFullReceipt = async () => {
-    setTesting(true)
-    setResult(null)
-
-    try {
-      const fullReceipt = generateFullTestReceipt()
-
-      const response = await fetch('/api/print/kube2', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          printerIp,
-          content: fullReceipt,
-          tableNumber: 55,
-        }),
-      })
-
-      const data = await response.json()
-      setResult({
-        success: data.success,
-        message: data.success ? 'Ricevuta completa OK!' : 'Ricevuta completa fallita',
-        details: data.error || 'Ricevuta completa con tutti i comandi ESC/POS'
-      })
-    } catch (error) {
-      setResult({
-        success: false,
-        message: 'Errore ricevuta completa',
-        details: error instanceof Error ? error.message : 'Errore sconosciuto'
-      })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  const generateFullTestReceipt = () => {
+  const generateSystemTestReceipt = () => {
     const ESC = "\x1B"
     const GS = "\x1D"
     
@@ -163,52 +117,35 @@ export function PrinterTest() {
     
     // Centro
     content += ESC + "a" + "\x01"
-    content += ESC + "!" + "\x18" // Grande
-    content += "IL NIDO\n"
-    content += ESC + "!" + "\x00" // Normale
-    content += "Hotel Sorrento ***\n"
-    content += "Via Nastro Verde 82\n"
-    content += "Sorrento (80067)\n"
-    content += "Tel: +39 081 878 2706\n"
+    content += ESC + "!" + "\x18"
+    content += "TEST SISTEMA\n"
+    content += ESC + "!" + "\x00"
+    content += "Stampa via comandi sistema\n"
     content += "\n"
-    
-    content += "================================\n"
     
     // Sinistra
     content += ESC + "a" + "\x00"
-    content += ESC + "!" + "\x08" // Grassetto
-    content += "TAVOLO: 55\n"
-    content += ESC + "!" + "\x00"
-    content += `DATA: ${new Date().toLocaleDateString("it-IT")}\n`
-    content += `ORA: ${new Date().toLocaleTimeString("it-IT")}\n`
+    content += `IP: ${printerIp}\n`
+    content += `Data: ${new Date().toLocaleDateString("it-IT")}\n`
+    content += `Ora: ${new Date().toLocaleTimeString("it-IT")}\n`
     content += "\n"
     
-    content += "--------------------------------\n"
-    content += ESC + "!" + "\x08"
-    content += "ORDINE:\n"
-    content += ESC + "!" + "\x00"
-    content += "--------------------------------\n"
+    if (systemInfo) {
+      content += "SISTEMA:\n"
+      content += `Platform: ${systemInfo.platform}\n`
+      content += `Node: ${systemInfo.nodeVersion}\n`
+      content += `Env: ${systemInfo.environment}\n`
+      content += `Vercel: ${systemInfo.isVercel ? 'Si' : 'No'}\n`
+      content += "\n"
+      
+      content += "COMANDI DISPONIBILI:\n"
+      Object.entries(systemInfo.availableCommands).forEach(([cmd, available]) => {
+        content += `${cmd}: ${available ? 'OK' : 'NO'}\n`
+      })
+      content += "\n"
+    }
     
-    // Articoli
-    content += "1x Risotto ai Funghi     EUR 14.00\n"
-    content += "2x Caffe                 EUR  3.00\n"
-    content += "1x Acqua                 EUR  2.50\n"
-    
-    content += "--------------------------------\n"
-    
-    // Totale a destra
-    content += ESC + "a" + "\x02"
-    content += ESC + "!" + "\x08"
-    content += "TOTALE: EUR 19.50\n"
-    content += ESC + "!" + "\x00"
-    
-    // Centro
-    content += ESC + "a" + "\x01"
-    content += "================================\n"
-    content += "\n"
-    content += "Grazie per la visita!\n"
-    content += "www.ilnido.it\n"
-    content += "\n"
+    content += "Test completato!\n"
     content += "\n"
     content += "\n"
     
@@ -219,10 +156,10 @@ export function PrinterTest() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-4xl mx-auto space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Debug Stampante KUBE2 - Test Progressivi</CardTitle>
+          <CardTitle>Test Stampante - Metodi Sistema</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -235,37 +172,21 @@ export function PrinterTest() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <Button 
-              onClick={testTcpConnection} 
+              onClick={testSystemTools} 
               disabled={testing || !printerIp}
               className="w-full"
             >
-              {testing ? 'Testing...' : '1. Test TCP'}
+              {testing ? 'Testing...' : 'Test con Comandi Sistema'}
             </Button>
             <Button 
-              onClick={testRawPrint} 
+              onClick={testSystemPrint} 
               disabled={testing || !printerIp}
               variant="outline"
               className="w-full"
             >
-              {testing ? 'Printing...' : '2. Test Testo'}
-            </Button>
-            <Button 
-              onClick={testEscPosPrint} 
-              disabled={testing || !printerIp}
-              variant="outline"
-              className="w-full"
-            >
-              {testing ? 'Printing...' : '3. Test ESC/POS'}
-            </Button>
-            <Button 
-              onClick={testFullReceipt} 
-              disabled={testing || !printerIp}
-              variant="outline"
-              className="w-full"
-            >
-              {testing ? 'Printing...' : '4. Ricevuta Completa'}
+              {testing ? 'Printing...' : 'Stampa con Sistema'}
             </Button>
           </div>
 
@@ -286,35 +207,96 @@ export function PrinterTest() {
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Informazioni Sistema */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Informazioni Sistema</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingSystemInfo ? (
+            <div>Caricamento informazioni sistema...</div>
+          ) : systemInfo ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <div className="font-medium">Platform</div>
+                  <div className="text-sm text-gray-600">{systemInfo.platform}</div>
+                </div>
+                <div>
+                  <div className="font-medium">Node.js</div>
+                  <div className="text-sm text-gray-600">{systemInfo.nodeVersion}</div>
+                </div>
+                <div>
+                  <div className="font-medium">Environment</div>
+                  <div className="text-sm text-gray-600">{systemInfo.environment}</div>
+                </div>
+                <div>
+                  <div className="font-medium">Vercel</div>
+                  <div className="text-sm text-gray-600">{systemInfo.isVercel ? 'Sì' : 'No'}</div>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-medium mb-2">Comandi Disponibili</div>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                  {Object.entries(systemInfo.availableCommands).map(([cmd, available]) => (
+                    <div key={cmd} className={`text-sm p-2 rounded ${
+                      available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {cmd}: {available ? '✅' : '❌'}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {systemInfo.defaultRoute && (
+                <div>
+                  <div className="font-medium">Default Route</div>
+                  <div className="text-sm text-gray-600 font-mono bg-gray-100 p-2 rounded">
+                    {systemInfo.defaultRoute}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-red-600">Errore caricamento informazioni sistema</div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Spiegazione */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Perché Node.js Socket non funziona</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <h4 className="font-medium text-yellow-900 mb-2">🚨 Problema identificato:</h4>
+            <p className="text-sm text-yellow-800">
+              Il tuo altro software funziona perché probabilmente usa driver di sistema o protocolli diversi.
+              Node.js sta tentando connessioni TCP raw che potrebbero essere bloccate.
+            </p>
+          </div>
 
           <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">🔍 Test progressivi:</h4>
-            <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li><strong>Test TCP</strong>: Verifica solo la connessione socket</li>
-              <li><strong>Test Testo</strong>: Invia testo semplice senza comandi</li>
-              <li><strong>Test ESC/POS</strong>: Comandi minimi (reset + taglio)</li>
-              <li><strong>Ricevuta Completa</strong>: Tutti i comandi di formattazione</li>
-            </ol>
-          </div>
-
-          <div className="bg-red-50 p-4 rounded-lg">
-            <h4 className="font-medium text-red-900 mb-2">🚨 Se anche il Test TCP fallisce:</h4>
-            <ul className="text-sm text-red-800 space-y-1 list-disc list-inside">
-              <li><strong>Problema di ambiente</strong>: Node.js potrebbe avere restrizioni di rete</li>
-              <li><strong>Vercel/Deploy</strong>: I servizi cloud spesso bloccano connessioni raw</li>
-              <li><strong>Firewall applicativo</strong>: Diverso dal firewall di sistema</li>
-              <li><strong>Binding di rete</strong>: La stampante potrebbe accettare solo da certi IP</li>
+            <h4 className="font-medium text-blue-900 mb-2">🔧 Soluzioni alternative:</h4>
+            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+              <li><strong>netcat (nc)</strong>: Invia dati raw via TCP</li>
+              <li><strong>curl</strong>: Prova connessione HTTP alla porta 9100</li>
+              <li><strong>lp</strong>: Usa il sistema di stampa Linux</li>
+              <li><strong>Driver sistema</strong>: Configura stampante come dispositivo di sistema</li>
             </ul>
           </div>
 
-          <div className="bg-yellow-50 p-4 rounded-lg">
-            <h4 className="font-medium text-yellow-900 mb-2">💡 Possibili soluzioni:</h4>
-            <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-              <li>Prova da localhost invece che da deploy remoto</li>
-              <li>Usa un proxy/bridge locale che converte HTTP → TCP</li>
-              <li>Configura la stampante per accettare da tutti gli IP</li>
-              <li>Usa driver di stampa del sistema operativo invece di TCP raw</li>
-            </ul>
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h4 className="font-medium text-green-900 mb-2">✅ Se i comandi sistema funzionano:</h4>
+            <p className="text-sm text-green-800">
+              Significa che il problema è specifico di Node.js Socket. Possiamo usare i comandi di sistema
+              come workaround per la stampa.
+            </p>
           </div>
         </CardContent>
       </Card>
