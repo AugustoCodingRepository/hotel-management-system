@@ -15,7 +15,7 @@ export interface PrintData {
 
 export class Kube2Printer {
   private static readonly PRINTER_IP = "10.0.0.55"
-  private static readonly PRINTER_PORT = 9100 // Porta standard per stampanti di rete
+  private static readonly PRINTER_PORT = 9100
 
   static async printReceipt(data: PrintData): Promise<{ success: boolean; message: string }> {
     try {
@@ -106,7 +106,6 @@ export class Kube2Printer {
       const name = item.name.length > 20 ? item.name.substring(0, 17) + "..." : item.name
       const nameFormatted = name.padEnd(20)
       const qtyFormatted = item.quantity.toString().padStart(3)
-      // Aggiunto spazio tra EUR e il prezzo
       const priceFormatted = `EUR ${item.totalPrice.toFixed(2)}`.padStart(9)
 
       content += `${nameFormatted} ${qtyFormatted} ${priceFormatted}\n`
@@ -135,7 +134,7 @@ export class Kube2Printer {
     content += "\n"
     content += "\n"
 
-    // Taglia la carta (aggiungi più spazio prima del taglio)
+    // Taglia la carta
     content += GS + "V" + "\x42" + "\x00"
 
     return content

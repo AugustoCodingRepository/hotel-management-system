@@ -1,153 +1,175 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { Socket } from "net"
+'use client'
 
-export async function POST(request: NextRequest) {
-  try {
-    const { printerIp } = await request.json()
+import { useState } from 'react'
+import { Button } from '@/app/components/ui/button'
+import { Input } from '@/app/components/ui/input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card'
 
-    console.log(`🧪 Testing connection to KUBE2 printer at ${printerIp}`)
-
-    const result = await testKube2Connection(printerIp)
-
-    return NextResponse.json(result)
-  } catch (error) {
-    console.error("❌ Test API error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Errore interno del server",
-        details: error instanceof Error ? error.message : "Errore sconosciuto"
-      },
-      { status: 500 },
-    )
-  }
+interface TestResult {
+  success: boolean
+  message: string
+  details?: string
 }
 
-async function testKube2Connection(printerIp: string): Promise<{ success: boolean; message: string; details?: string }> {
-  return new Promise((resolve) => {
-    const socket = new Socket()
-    const PRINTER_PORT = 9100
-    const TIMEOUT = 5000 // Timeout più breve come nel Python
+export function PrinterTest() {
+  const [printerIp, setPrinterIp] = useState('10.0.0.55')
+  const [testing, setTesting] = useState(false)
+  const [result, setResult] = useState<TestResult | null>(null)
 
-    console.log(`🔌 Attempting connection to ${printerIp}:${PRINTER_PORT}`)
+  const testConnection = async () => {
+    setTesting(true)
+    setResult(null)
 
-    // Imposta timeout del socket
-    socket.setTimeout(TIMEOUT)
+    try {
+      const response = await fetch('/api/print/kube2/test', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ printerIp }),
+      })
 
-    const cleanup = () => {
-      try {
-        socket.destroy()
-      } catch (e) {
-        // Ignora errori di cleanup
-      }
+      const data = await response.json()
+      setResult(data)
+    } catch (error) {
+      setResult({
+        success: false,
+        message: 'Errore di rete',
+        details: error instanceof Error ? error.message : 'Errore sconosciuto'
+      })
+    } finally {
+      setTesting(false)
     }
+  }
 
-    const timeout = setTimeout(() => {
-      console.log(`⏰ Connection timeout after ${TIMEOUT}ms`)
-      cleanup()
-      resolve({ 
-        success: false, 
-        message: "Timeout connessione stampante",
-        details: `Impossibile connettersi a ${printerIp}:${PRINTER_PORT} entro ${TIMEOUT/1000} secondi`
-      })
-    }, TIMEOUT)
+  const testActualPrint = async () => {
+    setTesting(true)
+    setResult(null)
 
-    socket.connect(PRINTER_PORT, printerIp, () => {
-      console.log(`✅ Successfully connected to KUBE2 at ${printerIp}:${PRINTER_PORT}`)
-      clearTimeout(timeout)
-
-      try {
-        // Comando reset ESC/POS come nel Python
-        const resetCommand = Buffer.from([0x1B, 0x40]) // ESC @
-        socket.write(resetCommand, (error) => {
-          if (error) {
-            console.error("❌ Error sending reset command:", error)
-            cleanup()
-            resolve({ 
-              success: false, 
-              message: "Errore invio comando reset",
-              details: error.message
-            })
-          } else {
-            console.log("✅ Reset command sent successfully")
-            
-            // Piccola pausa come nel Python
-            setTimeout(() => {
-              // Test data come nel Python
-              const testData = Buffer.from("TEST KUBE II\n\n", 'utf8')
-              socket.write(testData, (error) => {
-                cleanup()
-                if (error) {
-                  resolve({ 
-                    success: false, 
-                    message: "Errore invio dati test",
-                    details: error.message
-                  })
-                } else {
-                  resolve({ 
-                    success: true, 
-                    message: "Connessione KUBE2 OK - Stampante risponde correttamente",
-                    details: `Connesso a ${printerIp}:${PRINTER_PORT}, comandi ESC/POS inviati`
-                  })
-                }
-              })
-            }, 500) // 500ms come nel Python
-          }
-        })
-      } catch (error) {
-        clearTimeout(timeout)
-        cleanup()
-        resolve({ 
-          success: false, 
-          message: "Errore durante test comandi",
-          details: error instanceof Error ? error.message : "Errore sconosciuto"
-        })
+    try {
+      // Test con dati di stampa reali
+      const testData = {
+        tableNumber: 99,
+        items: [
+          { name: "Test Item", quantity: 1, unitPrice: 5.00, totalPrice: 5.00 }
+        ],
+        total: 5.00,
+        timestamp: new Date().toISOString()
       }
-    })
 
-    socket.on("error", (error: any) => {
-      console.error("❌ Socket error:", error)
-      clearTimeout(timeout)
-      cleanup()
-      
-      let errorMessage = "Errore di connessione"
-      let details = error.message
-
-      if (error.code === "ECONNREFUSED") {
-        errorMessage = "Connessione rifiutata"
-        details = "Stampante non raggiungibile sulla porta 9100 - Verifica che sia accesa"
-      } else if (error.code === "EHOSTUNREACH") {
-        errorMessage = "Host non raggiungibile"
-        details = "Verifica IP e connessione di rete"
-      } else if (error.code === "ENETUNREACH") {
-        errorMessage = "Rete non raggiungibile"
-        details = "Problema di routing di rete"
-      } else if (error.code === "ETIMEDOUT") {
-        errorMessage = "Timeout connessione"
-        details = "La stampante non risponde entro il tempo limite"
-      }
-      
-      resolve({ 
-        success: false, 
-        message: errorMessage,
-        details: `${details} (${error.code})`
+      const response = await fetch('/api/print/kube2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          printerIp,
+          content: generateTestReceipt(testData),
+          tableNumber: testData.tableNumber,
+        }),
       })
-    })
 
-    socket.on("timeout", () => {
-      console.log("⏰ Socket timeout")
-      clearTimeout(timeout)
-      cleanup()
-      resolve({ 
-        success: false, 
-        message: "Timeout socket",
-        details: "La connessione è andata in timeout"
+      const data = await response.json()
+      setResult({
+        success: data.success,
+        message: data.success ? 'Test di stampa riuscito!' : 'Test di stampa fallito',
+        details: data.error || 'Ricevuta di test inviata alla stampante'
       })
-    })
+    } catch (error) {
+      setResult({
+        success: false,
+        message: 'Errore test stampa',
+        details: error instanceof Error ? error.message : 'Errore sconosciuto'
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
 
-    socket.on("close", () => {
-      console.log("🔌 Connection to printer closed")
-      clearTimeout(timeout)
-    })
-  })
+  const generateTestReceipt = (data: any) => {
+    const ESC = "\x1B"
+    const GS = "\x1D"
+    
+    let content = ""
+    content += ESC + "@" // Reset
+    content += ESC + "a" + "\x01" // Centra
+    content += "TEST STAMPA\n"
+    content += "KUBE2 PRINTER\n"
+    content += "\n"
+    content += ESC + "a" + "\x00" // Allinea sinistra
+    content += `TAVOLO: ${data.tableNumber}\n`
+    content += `DATA: ${new Date().toLocaleDateString("it-IT")}\n`
+    content += `ORA: ${new Date().toLocaleTimeString("it-IT")}\n\n`
+    content += "Test Item            1   5.00\n"
+    content += "TOTALE: EUR 5.00\n\n"
+    content += GS + "V" + "\x42" + "\x00" // Taglia carta
+    
+    return content
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <Card>
+        <CardHeader>
+          <CardTitle>Test Connessione Stampante KUBE2</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              placeholder="IP Stampante"
+              value={printerIp}
+              onChange={(e) => setPrinterIp(e.target.value)}
+              className="flex-1"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button 
+              onClick={testConnection} 
+              disabled={testing || !printerIp}
+              className="flex-1"
+            >
+              {testing ? 'Testing...' : 'Test Connessione'}
+            </Button>
+            <Button 
+              onClick={testActualPrint} 
+              disabled={testing || !printerIp}
+              variant="outline"
+              className="flex-1"
+            >
+              {testing ? 'Printing...' : 'Test Stampa Reale'}
+            </Button>
+          </div>
+
+          {result && (
+            <div className={`p-4 rounded-lg border ${
+              result.success 
+                ? 'bg-green-50 border-green-200 text-green-800' 
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              <div className="font-medium mb-2">
+                {result.success ? '✅ Successo' : '❌ Errore'}
+              </div>
+              <div className="mb-2">{result.message}</div>
+              {result.details && (
+                <div className="text-sm opacity-75">
+                  Dettagli: {result.details}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="text-sm text-gray-600 space-y-2">
+            <div className="font-medium">Se il test di connessione funziona ma la stampa no:</div>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Prova il "Test Stampa Reale" per vedere se stampa davvero</li>
+              <li>Controlla i log del server per errori specifici</li>
+              <li>Verifica che la stampante accetti comandi ESC/POS</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
 }

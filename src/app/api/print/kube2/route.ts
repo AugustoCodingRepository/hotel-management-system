@@ -5,19 +5,16 @@ export async function POST(request: NextRequest) {
   try {
     const { printerIp, content, tableNumber } = await request.json()
 
-    console.log(`🖨️ Printing receipt for table ${tableNumber} to KUBE2 at ${printerIp}`)
+    console.log(`🖨️ Printing receipt for table ${tableNumber} to ${printerIp}`)
 
-    // Crea connessione socket alla stampante
     const result = await printToKube2(printerIp, content)
 
     if (result.success) {
-      console.log("✅ Receipt sent to printer successfully")
       return NextResponse.json({
         success: true,
-        message: "Conto inviato alla stampante KUBE2",
+        message: "Stampa completata con successo",
       })
     } else {
-      console.error("❌ Print failed:", result.error)
       return NextResponse.json(
         {
           success: false,
@@ -31,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: "Errore interno del server di stampa",
+        error: "Errore interno del server",
       },
       { status: 500 },
     )
@@ -42,41 +39,43 @@ async function printToKube2(printerIp: string, content: string): Promise<{ succe
   return new Promise((resolve) => {
     const socket = new Socket()
     const PRINTER_PORT = 9100
-    const TIMEOUT = 5000
+    const TIMEOUT = 5000 // Timeout più lungo per la stampa
 
-    // Timeout per la connessione
+    console.log(`🔌 Connecting to printer at ${printerIp}:${PRINTER_PORT}`)
+
     const timeout = setTimeout(() => {
+      console.log("⏰ Print timeout")
       socket.destroy()
       resolve({ success: false, error: "Timeout connessione stampante" })
     }, TIMEOUT)
 
     socket.connect(PRINTER_PORT, printerIp, () => {
-      console.log(`🔗 Connected to KUBE2 printer at ${printerIp}:${PRINTER_PORT}`)
+      console.log("✅ Connected to printer, sending data...")
       clearTimeout(timeout)
 
-      // Invia il contenuto alla stampante
+      // Invia il contenuto della ricevuta
       socket.write(content, "binary", (error) => {
         if (error) {
-          console.error("❌ Error writing to printer:", error)
+          console.error("❌ Error sending print data:", error)
           socket.destroy()
-          resolve({ success: false, error: "Errore invio dati alla stampante" })
+          resolve({ success: false, error: `Errore invio dati: ${error.message}` })
         } else {
-          console.log("✅ Data sent to printer successfully")
+          console.log("✅ Print data sent successfully")
           socket.end()
           resolve({ success: true })
         }
       })
     })
 
-    socket.on("error", (error) => {
-      console.error("❌ Socket error:", error)
+    socket.on("error", (error: any) => {
+      console.error("❌ Print connection error:", error)
       clearTimeout(timeout)
       socket.destroy()
       resolve({ success: false, error: `Errore connessione: ${error.message}` })
     })
 
     socket.on("close", () => {
-      console.log("🔌 Connection to printer closed")
+      console.log("🔌 Printer connection closed")
       clearTimeout(timeout)
     })
   })
