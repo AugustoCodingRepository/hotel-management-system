@@ -159,9 +159,17 @@ export function PrinterTest() {
     <div className="max-w-4xl mx-auto space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Test Stampante - Diagnosi Rete</CardTitle>
+          <CardTitle>Test Stampante - Diagnosi Avanzata</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-900 mb-2">ℹ️ Situazione attuale:</h4>
+            <p className="text-sm text-blue-800">
+              Hai confermato che dal tuo PC riesci a pingare la stampante e che è sulla stessa rete.
+              Ora testiamo se il server riesce a raggiungerla.
+            </p>
+          </div>
+
           <div className="flex gap-2">
             <Input
               type="text"
@@ -178,16 +186,15 @@ export function PrinterTest() {
               disabled={testing || !printerIp}
               className="w-full"
             >
-              {testing ? 'Testing...' : 'Test Connettività Rete'}
+              {testing ? 'Testing...' : 'Test Connettività Server'}
             </Button>
             <Button 
               onClick={testSystemPrint} 
               disabled={testing || !printerIp}
               variant="outline"
               className="w-full"
-              disabled={true}
             >
-              Stampa (Disabilitata - Ping fallito)
+              {testing ? 'Printing...' : 'Test Stampa Sistema'}
             </Button>
           </div>
 
@@ -214,7 +221,7 @@ export function PrinterTest() {
       {/* Informazioni Sistema */}
       <Card>
         <CardHeader>
-          <CardTitle>Informazioni Sistema</CardTitle>
+          <CardTitle>Informazioni Sistema Server</CardTitle>
         </CardHeader>
         <CardContent>
           {loadingSystemInfo ? (
@@ -236,7 +243,9 @@ export function PrinterTest() {
                 </div>
                 <div>
                   <div className="font-medium">Vercel</div>
-                  <div className="text-sm text-gray-600">{systemInfo.isVercel ? 'Sì' : 'No'}</div>
+                  <div className="text-sm text-gray-600 font-bold">
+                    {systemInfo.isVercel ? '🟡 SÌ - Questo può causare problemi!' : '🟢 No'}
+                  </div>
                 </div>
               </div>
 
@@ -254,8 +263,8 @@ export function PrinterTest() {
               </div>
 
               <div>
-                <div className="font-medium mb-2">Interfacce di Rete</div>
-                <div className="text-sm text-gray-600 font-mono bg-gray-100 p-2 rounded">
+                <div className="font-medium mb-2">Interfacce di Rete Server</div>
+                <div className="text-xs text-gray-600 font-mono bg-gray-100 p-2 rounded max-h-40 overflow-y-auto">
                   {systemInfo.networkInterfaces}
                 </div>
               </div>
@@ -263,7 +272,7 @@ export function PrinterTest() {
               {systemInfo.defaultRoute && (
                 <div>
                   <div className="font-medium mb-2">Route di Default</div>
-                  <div className="text-sm text-gray-600 font-mono bg-gray-100 p-2 rounded max-h-32 overflow-y-auto">
+                  <div className="text-xs text-gray-600 font-mono bg-gray-100 p-2 rounded max-h-32 overflow-y-auto">
                     {systemInfo.defaultRoute}
                   </div>
                 </div>
@@ -275,48 +284,38 @@ export function PrinterTest() {
         </CardContent>
       </Card>
 
-      {/* Diagnosi Problema */}
+      {/* Diagnosi Differenza PC vs Server */}
       <Card>
         <CardHeader>
-          <CardTitle>🚨 Problema Identificato: Ping ICMP Fallito</CardTitle>
+          <CardTitle>🔍 Perché il PC funziona ma il server no?</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="bg-red-50 p-4 rounded-lg">
-            <h4 className="font-medium text-red-900 mb-2">❌ Problema di rete di base:</h4>
-            <p className="text-sm text-red-800">
-              La stampante non risponde al ping ICMP. Questo significa che il problema non è nei socket Node.js
-              ma nella connettività di rete fondamentale.
-            </p>
-          </div>
-
           <div className="bg-yellow-50 p-4 rounded-lg">
-            <h4 className="font-medium text-yellow-900 mb-2">🔍 Possibili cause:</h4>
+            <h4 className="font-medium text-yellow-900 mb-2">🤔 Possibili cause:</h4>
             <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-              <li><strong>IP errato</strong>: L'indirizzo IP della stampante è cambiato</li>
-              <li><strong>Stampante spenta</strong>: La stampante non è accesa o in standby profondo</li>
-              <li><strong>Rete diversa</strong>: Server e stampante su reti/VLAN diverse</li>
-              <li><strong>Firewall ICMP</strong>: Il firewall blocca i ping ICMP</li>
-              <li><strong>Configurazione rete</strong>: Problemi di routing o gateway</li>
+              <li><strong>Vercel/Cloud</strong>: Se su Vercel, le connessioni di rete sono limitate</li>
+              <li><strong>Container/Docker</strong>: Il server è in un container con rete isolata</li>
+              <li><strong>Firewall server</strong>: Il server ha un firewall diverso dal PC</li>
+              <li><strong>NAT/Routing</strong>: Il server ha un percorso di rete diverso</li>
+              <li><strong>Privilegi ICMP</strong>: Il server non ha privilegi per ping ICMP</li>
             </ul>
           </div>
 
           <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">🔧 Passi per risolvere:</h4>
+            <h4 className="font-medium text-blue-900 mb-2">🧪 Test diagnostici:</h4>
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li>Verifica che la stampante sia accesa (LED verdi)</li>
-              <li>Controlla l'IP dal pannello della stampante (Menu → Network)</li>
-              <li>Prova il ping dal tuo PC: <code className="bg-white px-1 rounded">ping {printerIp}</code></li>
-              <li>Verifica che server e stampante siano sulla stessa rete</li>
-              <li>Controlla le impostazioni di rete della stampante</li>
-              <li>Se necessario, riconfigura l'IP della stampante</li>
+              <li>Il test sopra mostrerà se il server riesce a raggiungere la stampante</li>
+              <li>Verificheremo se è un problema di ping ICMP o di porta 9100</li>
+              <li>Testeremo diversi metodi di connessione (nc, telnet, curl)</li>
+              <li>Se la porta 9100 è raggiungibile, la stampa dovrebbe funzionare</li>
             </ol>
           </div>
 
           <div className="bg-green-50 p-4 rounded-lg">
-            <h4 className="font-medium text-green-900 mb-2">✅ Una volta risolto il ping:</h4>
+            <h4 className="font-medium text-green-900 mb-2">✅ Prossimi passi:</h4>
             <p className="text-sm text-green-800">
-              Quando il ping funzionerà, potremo testare la stampa con i comandi di sistema
-              e risolvere definitivamente il problema.
+              Clicca "Test Connettività Server" per vedere se il server riesce a raggiungere la stampante.
+              Se la porta 9100 è aperta, potremo procedere con la stampa anche se il ping ICMP fallisce.
             </p>
           </div>
         </CardContent>
