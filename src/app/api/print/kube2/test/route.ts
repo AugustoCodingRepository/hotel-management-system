@@ -1,105 +1,51 @@
 import { NextResponse } from "next/server"
-import { exec } from "child_process"
-import { promisify } from "util"
 import net from "net"
-
-const execAsync = promisify(exec)
 
 export async function POST(request: Request) {
   try {
-    const { printerIp = '10.0.0.55', port = 9100 } = await request.json()
+    const { printerIp } = await request.json()
     
-    console.log(`🔍 Testing connection to ${printerIp}:${port}`)
+    console.log(`🔍 Testing connection to printer at ${printerIp}:9100`)
+
+    // Test 1: Basic socket connection
+    const socketResult = await testSocketConnection(printerIp, 9100, 5000)
     
-    const testResults = {
-      timestamp: new Date().toISOString(),
-      printerIp,
-      port,
-      tests: {
-        socketConnection: { success: false, details: '', duration: 0 },
-        pingTest: { success: false, details: '', duration: 0 },
-        portScan: { success: false, details: '', duration: 0 },
-        systemInfo: { success: false, details: '', duration: 0 }
-      }
-    }
-
-    // Test 1: Socket Connection
-    const socketStart = Date.now()
-    try {
-      await testSocketConnection(printerIp, port)
-      testResults.tests.socketConnection = {
+    if (socketResult.success) {
+      console.log("✅ Socket connection successful")
+      
+      // Test 2: Try to send a simple command
+      const commandResult = await testPrinterCommand(printerIp, 9100)
+      
+      return NextResponse.json({
         success: true,
-        details: `Socket connection successful to ${printerIp}:${port}`,
-        duration: Date.now() - socketStart
-      }
-    } catch (error) {
-      testResults.tests.socketConnection = {
+        message: "Connessione alla stampante riuscita",
+        details: {
+          socketTest: socketResult,
+          commandTest: commandResult
+        }
+      })
+    } else {
+      console.log("❌ Socket connection failed:", socketResult.error)
+      
+      return NextResponse.json({
         success: false,
-        details: `Socket connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        duration: Date.now() - socketStart
-      }
+        message: "Connessione alla stampante fallita",
+        error: socketResult.error,
+        suggestions: [
+          "Verifica che la stampante sia accesa",
+          "Controlla che l'IP sia corretto",
+          "Assicurati che server e stampante siano sulla stessa rete",
+          "Se sei su Vercel, la connessione è bloccata per design"
+        ]
+      })
     }
 
-    // Test 2: Ping Test
-    const pingStart = Date.now()
-    try {
-      const pingResult = await execAsync(`ping -c 1 -W 3000 ${printerIp}`)
-      testResults.tests.pingTest = {
-        success: true,
-        details: `Ping successful: ${pingResult.stdout.split('\n')[1] || 'OK'}`,
-        duration: Date.now() - pingStart
-      }
-    } catch (error: any) {
-      testResults.tests.pingTest = {
-        success: false,
-        details: `Ping failed: ${error.stderr || error.message}`,
-        duration: Date.now() - pingStart
-      }
-    }
-
-    // Test 3: Port Scan
-    const portStart = Date.now()
-    try {
-      const portResult = await execAsync(`timeout 5 nc -z -v ${printerIp} ${port}`)
-      testResults.tests.portScan = {
-        success: true,
-        details: `Port ${port} is open: ${portResult.stderr || 'Connected'}`,
-        duration: Date.now() - portStart
-      }
-    } catch (error: any) {
-      testResults.tests.portScan = {
-        success: false,
-        details: `Port ${port} is closed: ${error.stderr || error.message}`,
-        duration: Date.now() - portStart
-      }
-    }
-
-    // Test 4: System Info
-    const sysStart = Date.now()
-    try {
-      const hostname = await execAsync('hostname')
-      const whoami = await execAsync('whoami')
-      testResults.tests.systemInfo = {
-        success: true,
-        details: `Hostname: ${hostname.stdout.trim()}, User: ${whoami.stdout.trim()}`,
-        duration: Date.now() - sysStart
-      }
-    } catch (error: any) {
-      testResults.tests.systemInfo = {
-        success: false,
-        details: `System info failed: ${error.message}`,
-        duration: Date.now() - sysStart
-      }
-    }
-
-    console.log("🔍 Test results:", testResults)
-    
-    return NextResponse.json(testResults)
   } catch (error) {
-    console.error("❌ Test error:", error)
+    console.error("❌ Printer test error:", error)
     return NextResponse.json(
       {
-        error: "Errore nel test di connessione",
+        success: false,
+        error: "Errore nel test della stampante",
         details: error instanceof Error ? error.message : "Errore sconosciuto"
       },
       { status: 500 }
@@ -107,26 +53,80 @@ export async function POST(request: Request) {
   }
 }
 
-function testSocketConnection(host: string, port: number): Promise<void> {
-  return new Promise((resolve, reject) => {
+function testSocketConnection(host: string, port: number, timeout: number = 5000): Promise<{success: boolean, error?: string, duration?: number}> {
+  return new Promise((resolve) => {
+    const startTime = Date.now()
     const socket = new net.Socket()
-    const timeout = 5000
-
+    
     const timer = setTimeout(() => {
       socket.destroy()
-      reject(new Error(`Connection timeout after ${timeout}ms`))
+      resolve({
+        success: false,
+        error: `Connection timeout after ${timeout}ms`
+      })
     }, timeout)
 
     socket.connect(port, host, () => {
+      const duration = Date.now() - startTime
       clearTimeout(timer)
       socket.destroy()
-      resolve()
+      resolve({
+        success: true,
+        duration
+      })
     })
 
     socket.on('error', (error) => {
       clearTimeout(timer)
       socket.destroy()
-      reject(error)
+      resolve({
+        success: false,
+        error: error.message
+      })
+    })
+  })
+}
+
+function testPrinterCommand(host: string, port: number): Promise<{success: boolean, error?: string, response?: string}> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket()
+    let response = ''
+    
+    const timer = setTimeout(() => {
+      socket.destroy()
+      resolve({
+        success: false,
+        error: "Command timeout"
+      })
+    }, 3000)
+
+    socket.connect(port, host, () => {
+      // Send a simple ESC/POS command to test communication
+      const testCommand = '\x1B@' // ESC @ (Initialize printer)
+      socket.write(testCommand)
+      
+      // Wait a bit for response
+      setTimeout(() => {
+        clearTimeout(timer)
+        socket.destroy()
+        resolve({
+          success: true,
+          response: response || "Command sent successfully"
+        })
+      }, 1000)
+    })
+
+    socket.on('data', (data) => {
+      response += data.toString()
+    })
+
+    socket.on('error', (error) => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve({
+        success: false,
+        error: error.message
+      })
     })
   })
 }
