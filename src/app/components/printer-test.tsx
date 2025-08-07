@@ -159,7 +159,7 @@ export function PrinterTest() {
     <div className="max-w-4xl mx-auto space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Test Stampante - Metodi Sistema</CardTitle>
+          <CardTitle>Test Stampante - Diagnosi Rete</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -178,15 +178,16 @@ export function PrinterTest() {
               disabled={testing || !printerIp}
               className="w-full"
             >
-              {testing ? 'Testing...' : 'Test con Comandi Sistema'}
+              {testing ? 'Testing...' : 'Test Connettività Rete'}
             </Button>
             <Button 
               onClick={testSystemPrint} 
               disabled={testing || !printerIp}
               variant="outline"
               className="w-full"
+              disabled={true}
             >
-              {testing ? 'Printing...' : 'Stampa con Sistema'}
+              Stampa (Disabilitata - Ping fallito)
             </Button>
           </div>
 
@@ -201,7 +202,7 @@ export function PrinterTest() {
               </div>
               <div className="mb-2">{result.message}</div>
               {result.details && (
-                <div className="text-sm opacity-75">
+                <div className="text-sm opacity-75 whitespace-pre-line">
                   {result.details}
                 </div>
               )}
@@ -252,10 +253,17 @@ export function PrinterTest() {
                 </div>
               </div>
 
+              <div>
+                <div className="font-medium mb-2">Interfacce di Rete</div>
+                <div className="text-sm text-gray-600 font-mono bg-gray-100 p-2 rounded">
+                  {systemInfo.networkInterfaces}
+                </div>
+              </div>
+
               {systemInfo.defaultRoute && (
                 <div>
-                  <div className="font-medium">Default Route</div>
-                  <div className="text-sm text-gray-600 font-mono bg-gray-100 p-2 rounded">
+                  <div className="font-medium mb-2">Route di Default</div>
+                  <div className="text-sm text-gray-600 font-mono bg-gray-100 p-2 rounded max-h-32 overflow-y-auto">
                     {systemInfo.defaultRoute}
                   </div>
                 </div>
@@ -267,35 +275,48 @@ export function PrinterTest() {
         </CardContent>
       </Card>
 
-      {/* Spiegazione */}
+      {/* Diagnosi Problema */}
       <Card>
         <CardHeader>
-          <CardTitle>Perché Node.js Socket non funziona</CardTitle>
+          <CardTitle>🚨 Problema Identificato: Ping ICMP Fallito</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="bg-yellow-50 p-4 rounded-lg">
-            <h4 className="font-medium text-yellow-900 mb-2">🚨 Problema identificato:</h4>
-            <p className="text-sm text-yellow-800">
-              Il tuo altro software funziona perché probabilmente usa driver di sistema o protocolli diversi.
-              Node.js sta tentando connessioni TCP raw che potrebbero essere bloccate.
+          <div className="bg-red-50 p-4 rounded-lg">
+            <h4 className="font-medium text-red-900 mb-2">❌ Problema di rete di base:</h4>
+            <p className="text-sm text-red-800">
+              La stampante non risponde al ping ICMP. Questo significa che il problema non è nei socket Node.js
+              ma nella connettività di rete fondamentale.
             </p>
           </div>
 
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">🔧 Soluzioni alternative:</h4>
-            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-              <li><strong>netcat (nc)</strong>: Invia dati raw via TCP</li>
-              <li><strong>curl</strong>: Prova connessione HTTP alla porta 9100</li>
-              <li><strong>lp</strong>: Usa il sistema di stampa Linux</li>
-              <li><strong>Driver sistema</strong>: Configura stampante come dispositivo di sistema</li>
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <h4 className="font-medium text-yellow-900 mb-2">🔍 Possibili cause:</h4>
+            <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+              <li><strong>IP errato</strong>: L'indirizzo IP della stampante è cambiato</li>
+              <li><strong>Stampante spenta</strong>: La stampante non è accesa o in standby profondo</li>
+              <li><strong>Rete diversa</strong>: Server e stampante su reti/VLAN diverse</li>
+              <li><strong>Firewall ICMP</strong>: Il firewall blocca i ping ICMP</li>
+              <li><strong>Configurazione rete</strong>: Problemi di routing o gateway</li>
             </ul>
           </div>
 
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-900 mb-2">🔧 Passi per risolvere:</h4>
+            <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+              <li>Verifica che la stampante sia accesa (LED verdi)</li>
+              <li>Controlla l'IP dal pannello della stampante (Menu → Network)</li>
+              <li>Prova il ping dal tuo PC: <code className="bg-white px-1 rounded">ping {printerIp}</code></li>
+              <li>Verifica che server e stampante siano sulla stessa rete</li>
+              <li>Controlla le impostazioni di rete della stampante</li>
+              <li>Se necessario, riconfigura l'IP della stampante</li>
+            </ol>
+          </div>
+
           <div className="bg-green-50 p-4 rounded-lg">
-            <h4 className="font-medium text-green-900 mb-2">✅ Se i comandi sistema funzionano:</h4>
+            <h4 className="font-medium text-green-900 mb-2">✅ Una volta risolto il ping:</h4>
             <p className="text-sm text-green-800">
-              Significa che il problema è specifico di Node.js Socket. Possiamo usare i comandi di sistema
-              come workaround per la stampa.
+              Quando il ping funzionerà, potremo testare la stampa con i comandi di sistema
+              e risolvere definitivamente il problema.
             </p>
           </div>
         </CardContent>

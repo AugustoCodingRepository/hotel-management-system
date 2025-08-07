@@ -51,6 +51,19 @@ async function printWithSystemTools(printerIp: string, content: string): Promise
     // Scrivi il contenuto in un file temporaneo
     writeFileSync(tempFile, content, 'binary')
     
+    // Prima verifica che la stampante sia raggiungibile
+    try {
+      console.log("🏓 Quick ping test before printing...")
+      await execAsync(`ping -c 1 -W 2000 ${printerIp}`)
+      console.log("✅ Printer is reachable")
+    } catch (pingError) {
+      unlinkSync(tempFile)
+      return { 
+        success: false, 
+        error: "Stampante non raggiungibile - ping fallito" 
+      }
+    }
+    
     // Metodo 1: Prova con netcat (nc)
     try {
       console.log("🔌 Trying with netcat...")
@@ -60,30 +73,35 @@ async function printWithSystemTools(printerIp: string, content: string): Promise
       unlinkSync(tempFile)
       
       return { success: true }
-    } catch (ncError) {
-      console.log("❌ Netcat failed, trying curl...")
+    } catch (ncError: any) {
+      console.log("❌ Netcat failed:", ncError.message)
       
       // Metodo 2: Prova con curl
       try {
-        await execAsync(`timeout 10 curl -X POST --data-binary @${tempFile} http://${printerIp}:9100/`)
+        console.log("🌐 Trying with curl...")
+        await execAsync(`timeout 10 curl -X POST --data-binary @${tempFile} http://${printerIp}:9100/ --connect-timeout 5`)
         
         // Cleanup
         unlinkSync(tempFile)
         
         return { success: true }
-      } catch (curlError) {
-        console.log("❌ Curl failed, trying lp command...")
+      } catch (curlError: any) {
+        console.log("❌ Curl failed:", curlError.message)
         
         // Metodo 3: Prova con lp (Linux printing system)
         try {
+          console.log("🖨️ Trying with lp command...")
           await execAsync(`timeout 10 lp -d ${printerIp} -o raw ${tempFile}`)
           
           // Cleanup
           unlinkSync(tempFile)
           
           return { success: true }
-        } catch (lpError) {
+        } catch (lpError: any) {
           console.log("❌ All system methods failed")
+          console.log("NC Error:", ncError.message)
+          console.log("Curl Error:", curlError.message)
+          console.log("LP Error:", lpError.message)
           
           // Cleanup
           try {
@@ -94,7 +112,7 @@ async function printWithSystemTools(printerIp: string, content: string): Promise
           
           return { 
             success: false, 
-            error: `Tutti i metodi di sistema falliti: nc, curl, lp` 
+            error: `Tutti i metodi falliti:\n- netcat: ${ncError.message}\n- curl: ${curlError.message}\n- lp: ${lpError.message}` 
           }
         }
       }
