@@ -16,7 +16,7 @@ export function PrinterTest() {
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
 
-  const testConnection = async () => {
+  const testTcpConnection = async () => {
     setTesting(true)
     setResult(null)
 
@@ -42,50 +42,13 @@ export function PrinterTest() {
     }
   }
 
-  const testActualPrint = async () => {
-    setTesting(true)
-    setResult(null)
-
-    try {
-      // Test con ricevuta semplice
-      const testReceipt = generateSimpleTestReceipt()
-
-      const response = await fetch('/api/print/kube2', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          printerIp,
-          content: testReceipt,
-          tableNumber: 99,
-        }),
-      })
-
-      const data = await response.json()
-      setResult({
-        success: data.success,
-        message: data.success ? 'Test di stampa completato!' : 'Test di stampa fallito',
-        details: data.error || 'Ricevuta di test inviata alla stampante KUBE2'
-      })
-    } catch (error) {
-      setResult({
-        success: false,
-        message: 'Errore test stampa',
-        details: error instanceof Error ? error.message : 'Errore sconosciuto'
-      })
-    } finally {
-      setTesting(false)
-    }
-  }
-
   const testRawPrint = async () => {
     setTesting(true)
     setResult(null)
 
     try {
-      // Test con comandi raw minimi
-      const rawContent = "\x1B@TEST KUBE II\n\nStampa funzionante!\n\n\n\x1DV\x00"
+      // Test con solo testo senza comandi ESC/POS
+      const rawText = "TEST STAMPA SEMPLICE\nSenza comandi ESC/POS\nSolo testo normale\n\n\n"
 
       const response = await fetch('/api/print/kube2', {
         method: 'POST',
@@ -94,21 +57,21 @@ export function PrinterTest() {
         },
         body: JSON.stringify({
           printerIp,
-          content: rawContent,
-          tableNumber: 88,
+          content: rawText,
+          tableNumber: 77,
         }),
       })
 
       const data = await response.json()
       setResult({
         success: data.success,
-        message: data.success ? 'Test raw completato!' : 'Test raw fallito',
-        details: data.error || 'Comandi raw inviati alla stampante'
+        message: data.success ? 'Test testo semplice OK!' : 'Test testo fallito',
+        details: data.error || 'Testo semplice inviato senza comandi ESC/POS'
       })
     } catch (error) {
       setResult({
         success: false,
-        message: 'Errore test raw',
+        message: 'Errore test testo',
         details: error instanceof Error ? error.message : 'Errore sconosciuto'
       })
     } finally {
@@ -116,7 +79,80 @@ export function PrinterTest() {
     }
   }
 
-  const generateSimpleTestReceipt = () => {
+  const testEscPosPrint = async () => {
+    setTesting(true)
+    setResult(null)
+
+    try {
+      // Test con comandi ESC/POS minimi
+      const escPosContent = "\x1B@TEST ESC/POS\n\nComandi stampante\n\n\n\x1DV\x00"
+
+      const response = await fetch('/api/print/kube2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          printerIp,
+          content: escPosContent,
+          tableNumber: 66,
+        }),
+      })
+
+      const data = await response.json()
+      setResult({
+        success: data.success,
+        message: data.success ? 'Test ESC/POS OK!' : 'Test ESC/POS fallito',
+        details: data.error || 'Comandi ESC/POS inviati (reset + taglio)'
+      })
+    } catch (error) {
+      setResult({
+        success: false,
+        message: 'Errore test ESC/POS',
+        details: error instanceof Error ? error.message : 'Errore sconosciuto'
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const testFullReceipt = async () => {
+    setTesting(true)
+    setResult(null)
+
+    try {
+      const fullReceipt = generateFullTestReceipt()
+
+      const response = await fetch('/api/print/kube2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          printerIp,
+          content: fullReceipt,
+          tableNumber: 55,
+        }),
+      })
+
+      const data = await response.json()
+      setResult({
+        success: data.success,
+        message: data.success ? 'Ricevuta completa OK!' : 'Ricevuta completa fallita',
+        details: data.error || 'Ricevuta completa con tutti i comandi ESC/POS'
+      })
+    } catch (error) {
+      setResult({
+        success: false,
+        message: 'Errore ricevuta completa',
+        details: error instanceof Error ? error.message : 'Errore sconosciuto'
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const generateFullTestReceipt = () => {
     const ESC = "\x1B"
     const GS = "\x1D"
     
@@ -128,35 +164,51 @@ export function PrinterTest() {
     // Centro
     content += ESC + "a" + "\x01"
     content += ESC + "!" + "\x18" // Grande
-    content += "TEST KUBE II\n"
+    content += "IL NIDO\n"
     content += ESC + "!" + "\x00" // Normale
-    content += "Sistema Hotel\n"
+    content += "Hotel Sorrento ***\n"
+    content += "Via Nastro Verde 82\n"
+    content += "Sorrento (80067)\n"
+    content += "Tel: +39 081 878 2706\n"
     content += "\n"
+    
+    content += "================================\n"
     
     // Sinistra
     content += ESC + "a" + "\x00"
-    content += "TAVOLO: 99\n"
+    content += ESC + "!" + "\x08" // Grassetto
+    content += "TAVOLO: 55\n"
+    content += ESC + "!" + "\x00"
     content += `DATA: ${new Date().toLocaleDateString("it-IT")}\n`
     content += `ORA: ${new Date().toLocaleTimeString("it-IT")}\n`
     content += "\n"
     
     content += "--------------------------------\n"
-    content += "1x Test Item             EUR 5.00\n"
-    content += "1x Caffe                 EUR 1.50\n"
+    content += ESC + "!" + "\x08"
+    content += "ORDINE:\n"
+    content += ESC + "!" + "\x00"
+    content += "--------------------------------\n"
+    
+    // Articoli
+    content += "1x Risotto ai Funghi     EUR 14.00\n"
+    content += "2x Caffe                 EUR  3.00\n"
+    content += "1x Acqua                 EUR  2.50\n"
+    
     content += "--------------------------------\n"
     
     // Totale a destra
     content += ESC + "a" + "\x02"
     content += ESC + "!" + "\x08"
-    content += "TOTALE: EUR 6.50\n"
+    content += "TOTALE: EUR 19.50\n"
     content += ESC + "!" + "\x00"
     
     // Centro
     content += ESC + "a" + "\x01"
     content += "================================\n"
     content += "\n"
-    content += "Test completato!\n"
-    content += "Grazie\n"
+    content += "Grazie per la visita!\n"
+    content += "www.ilnido.it\n"
+    content += "\n"
     content += "\n"
     content += "\n"
     
@@ -170,7 +222,7 @@ export function PrinterTest() {
     <div className="max-w-2xl mx-auto">
       <Card>
         <CardHeader>
-          <CardTitle>Test Stampante KUBE2 - Diagnosi Avanzata</CardTitle>
+          <CardTitle>Debug Stampante KUBE2 - Test Progressivi</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -183,13 +235,13 @@ export function PrinterTest() {
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Button 
-              onClick={testConnection} 
+              onClick={testTcpConnection} 
               disabled={testing || !printerIp}
               className="w-full"
             >
-              {testing ? 'Testing...' : '1. Test Connessione'}
+              {testing ? 'Testing...' : '1. Test TCP'}
             </Button>
             <Button 
               onClick={testRawPrint} 
@@ -197,15 +249,23 @@ export function PrinterTest() {
               variant="outline"
               className="w-full"
             >
-              {testing ? 'Printing...' : '2. Test Raw'}
+              {testing ? 'Printing...' : '2. Test Testo'}
             </Button>
             <Button 
-              onClick={testActualPrint} 
+              onClick={testEscPosPrint} 
               disabled={testing || !printerIp}
               variant="outline"
               className="w-full"
             >
-              {testing ? 'Printing...' : '3. Test Ricevuta'}
+              {testing ? 'Printing...' : '3. Test ESC/POS'}
+            </Button>
+            <Button 
+              onClick={testFullReceipt} 
+              disabled={testing || !printerIp}
+              variant="outline"
+              className="w-full"
+            >
+              {testing ? 'Printing...' : '4. Ricevuta Completa'}
             </Button>
           </div>
 
@@ -228,32 +288,32 @@ export function PrinterTest() {
           )}
 
           <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">🔍 Sequenza di test:</h4>
+            <h4 className="font-medium text-blue-900 mb-2">🔍 Test progressivi:</h4>
             <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-              <li><strong>Test Connessione</strong>: Verifica socket e comandi ESC/POS base</li>
-              <li><strong>Test Raw</strong>: Invia comandi minimi per verificare la stampa</li>
-              <li><strong>Test Ricevuta</strong>: Stampa una ricevuta completa di test</li>
+              <li><strong>Test TCP</strong>: Verifica solo la connessione socket</li>
+              <li><strong>Test Testo</strong>: Invia testo semplice senza comandi</li>
+              <li><strong>Test ESC/POS</strong>: Comandi minimi (reset + taglio)</li>
+              <li><strong>Ricevuta Completa</strong>: Tutti i comandi di formattazione</li>
             </ol>
           </div>
 
-          <div className="bg-yellow-50 p-4 rounded-lg">
-            <h4 className="font-medium text-yellow-900 mb-2">💡 Se il ping funziona ma i test falliscono:</h4>
-            <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-              <li>La porta 9100 potrebbe essere bloccata da un firewall</li>
-              <li>La stampante potrebbe non supportare connessioni TCP dirette</li>
-              <li>Potrebbe essere necessario un driver specifico</li>
-              <li>La stampante potrebbe essere in modalità sleep/standby</li>
-              <li>Verifica se altri software riescono a stampare</li>
+          <div className="bg-red-50 p-4 rounded-lg">
+            <h4 className="font-medium text-red-900 mb-2">🚨 Se anche il Test TCP fallisce:</h4>
+            <ul className="text-sm text-red-800 space-y-1 list-disc list-inside">
+              <li><strong>Problema di ambiente</strong>: Node.js potrebbe avere restrizioni di rete</li>
+              <li><strong>Vercel/Deploy</strong>: I servizi cloud spesso bloccano connessioni raw</li>
+              <li><strong>Firewall applicativo</strong>: Diverso dal firewall di sistema</li>
+              <li><strong>Binding di rete</strong>: La stampante potrebbe accettare solo da certi IP</li>
             </ul>
           </div>
 
-          <div className="bg-green-50 p-4 rounded-lg">
-            <h4 className="font-medium text-green-900 mb-2">✅ Il tuo Python funziona perché:</h4>
-            <ul className="text-sm text-green-800 space-y-1 list-disc list-inside">
-              <li>Usa la stessa sequenza di comandi che ho replicato</li>
-              <li>Ha timeout e retry appropriati</li>
-              <li>Gestisce correttamente i buffer e la codifica</li>
-              <li>Questo test dovrebbe funzionare allo stesso modo</li>
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <h4 className="font-medium text-yellow-900 mb-2">💡 Possibili soluzioni:</h4>
+            <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+              <li>Prova da localhost invece che da deploy remoto</li>
+              <li>Usa un proxy/bridge locale che converte HTTP → TCP</li>
+              <li>Configura la stampante per accettare da tutti gli IP</li>
+              <li>Usa driver di stampa del sistema operativo invece di TCP raw</li>
             </ul>
           </div>
         </CardContent>

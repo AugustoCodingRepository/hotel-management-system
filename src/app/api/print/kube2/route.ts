@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`🖨️ Printing receipt for table ${tableNumber} to KUBE2 at ${printerIp}`)
 
-    const result = await printToKube2Direct(printerIp, content)
+    const result = await printToKube2Minimal(printerIp, content)
 
     if (result.success) {
       console.log("✅ Receipt sent to printer successfully")
@@ -37,31 +37,27 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Stampa diretta replicando esattamente il Python funzionante
-async function printToKube2Direct(printerIp: string, content: string): Promise<{ success: boolean; error?: string }> {
+// Stampa minima senza retry - per debug
+async function printToKube2Minimal(printerIp: string, content: string): Promise<{ success: boolean; error?: string }> {
   return new Promise((resolve) => {
-    console.log(`🔌 Connecting to printer at ${printerIp}:9100`)
+    console.log(`🔌 Connecting to printer at ${printerIp}:9100 for printing`)
     
     const socket = new Socket()
-    socket.setTimeout(15000) // 15 secondi come nel Python per la stampa
+    socket.setTimeout(5000) // Timeout breve per debug
     
     let connected = false
+    let dataSent = false
 
     const cleanup = () => {
       try {
         if (socket && !socket.destroyed) {
-          // Feed finale come nel Python prima di chiudere
-          socket.write(Buffer.from([0x0A, 0x0A]), () => {
-            setTimeout(() => {
-              socket.destroy()
-            }, 500)
-          })
+          socket.end()
         }
       } catch (e) {
         try {
           socket.destroy()
         } catch (e2) {
-          // Ignora errori di cleanup
+          // Ignora errori
         }
       }
     }
@@ -70,51 +66,41 @@ async function printToKube2Direct(printerIp: string, content: string): Promise<{
       if (!connected) {
         console.log("⏰ Print connection timeout")
         cleanup()
-        resolve({ success: false, error: "Timeout connessione stampante" })
+        resolve({ success: false, error: "Timeout connessione per stampa" })
+      } else if (!dataSent) {
+        console.log("⏰ Print data timeout")
+        cleanup()
+        resolve({ success: false, error: "Timeout invio dati stampa" })
       }
-    }, 15000)
+    }, 5000)
 
     socket.connect(9100, printerIp, () => {
       connected = true
       console.log(`✅ Connected to printer for printing`)
       
       try {
-        // Reset iniziale come nel Python
-        const resetCommand = Buffer.from([0x1B, 0x40]) // ESC @
+        // Invia direttamente il contenuto senza reset
+        console.log("📤 Sending print data...")
         
-        socket.write(resetCommand, (resetError) => {
-          if (resetError) {
-            console.error("❌ Error sending reset for print:", resetError)
+        socket.write(content, "binary", (error) => {
+          dataSent = true
+          
+          if (error) {
+            console.error("❌ Error sending print data:", error)
             clearTimeout(timeout)
             cleanup()
-            resolve({ success: false, error: `Errore reset stampa: ${resetError.message}` })
+            resolve({ success: false, error: `Errore invio dati: ${error.message}` })
             return
           }
 
-          console.log("✅ Print reset sent")
+          console.log("✅ Print data sent successfully")
           
-          // Attendi 500ms come nel Python
+          // Attendi un momento per la stampa
           setTimeout(() => {
-            // Invia il contenuto della ricevuta
-            socket.write(content, "binary", (printError) => {
-              if (printError) {
-                console.error("❌ Error sending print data:", printError)
-                clearTimeout(timeout)
-                cleanup()
-                resolve({ success: false, error: `Errore invio dati stampa: ${printError.message}` })
-                return
-              }
-
-              console.log("✅ Print data sent successfully")
-              
-              // Attendi che la stampa finisca come nel Python
-              setTimeout(() => {
-                clearTimeout(timeout)
-                cleanup()
-                resolve({ success: true })
-              }, 1000) // 1 secondo per completare la stampa
-            })
-          }, 500) // 500ms dopo reset
+            clearTimeout(timeout)
+            cleanup()
+            resolve({ success: true })
+          }, 1000)
         })
       } catch (error) {
         console.error("❌ Error in print sequence:", error)

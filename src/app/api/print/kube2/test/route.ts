@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`🧪 Testing connection to KUBE2 printer at ${printerIp}`)
 
-    const result = await testKube2ConnectionDirect(printerIp)
+    const result = await testKube2ConnectionMinimal(printerIp)
 
     return NextResponse.json(result)
   } catch (error) {
@@ -23,150 +23,112 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Test diretto come il Python che funziona
-async function testKube2ConnectionDirect(printerIp: string): Promise<{ success: boolean; message: string; details?: string }> {
+// Test minimo - solo connessione TCP senza comandi
+async function testKube2ConnectionMinimal(printerIp: string): Promise<{ success: boolean; message: string; details?: string }> {
   return new Promise((resolve) => {
-    console.log(`🔌 Direct connection test to ${printerIp}:9100`)
+    console.log(`🔌 Minimal TCP connection test to ${printerIp}:9100`)
     
     const socket = new Socket()
     
-    // Configurazione socket identica al Python
-    socket.setTimeout(10000) // 10 secondi come nel Python
+    // Configurazione socket base
+    socket.setTimeout(3000) // Timeout breve per test rapido
     
     let connected = false
-    let responseReceived = false
 
     const cleanup = () => {
       try {
         if (socket && !socket.destroyed) {
-          socket.destroy()
+          socket.end()
         }
       } catch (e) {
-        // Ignora errori di cleanup
+        try {
+          socket.destroy()
+        } catch (e2) {
+          // Ignora errori
+        }
       }
     }
 
-    // Timeout manuale
     const timeout = setTimeout(() => {
       if (!connected) {
-        console.log("⏰ Connection timeout - stampante non raggiungibile")
+        console.log("⏰ TCP connection timeout")
         cleanup()
         resolve({
           success: false,
-          message: "Timeout connessione",
-          details: "La stampante non risponde entro 10 secondi. Verifica che sia accesa e sulla rete."
+          message: "Timeout TCP - Porta 9100 non risponde",
+          details: "La stampante non accetta connessioni TCP sulla porta 9100. Potrebbe usare un protocollo diverso."
         })
       }
-    }, 10000)
+    }, 3000)
 
+    // Evento di connessione riuscita
     socket.connect(9100, printerIp, () => {
       connected = true
-      console.log(`✅ Socket connected to ${printerIp}:9100`)
+      console.log(`✅ TCP connection established to ${printerIp}:9100`)
+      clearTimeout(timeout)
       
-      try {
-        // Invia comando reset esattamente come nel Python
-        const resetCommand = Buffer.from([0x1B, 0x40]) // ESC @
-        
-        socket.write(resetCommand, (writeError) => {
-          if (writeError) {
-            console.error("❌ Error writing reset command:", writeError)
-            clearTimeout(timeout)
-            cleanup()
-            resolve({
-              success: false,
-              message: "Errore invio comando",
-              details: `Connesso ma errore invio reset: ${writeError.message}`
-            })
-            return
-          }
-
-          console.log("✅ Reset command sent")
-          
-          // Attendi 500ms come nel Python
-          setTimeout(() => {
-            // Invia comando status come nel Python
-            const statusCommand = Buffer.from([0x1D, 0x72, 0x01]) // GS r 1
-            
-            socket.write(statusCommand, (statusError) => {
-              if (statusError) {
-                console.error("❌ Error writing status command:", statusError)
-                clearTimeout(timeout)
-                cleanup()
-                resolve({
-                  success: false,
-                  message: "Errore comando status",
-                  details: `Reset OK ma errore status: ${statusError.message}`
-                })
-                return
-              }
-
-              console.log("✅ Status command sent")
-              
-              // Attendi risposta per 200ms come nel Python
-              setTimeout(() => {
-                clearTimeout(timeout)
-                cleanup()
-                resolve({
-                  success: true,
-                  message: "Connessione KUBE2 OK",
-                  details: "Stampante connessa e risponde ai comandi ESC/POS"
-                })
-              }, 200)
-            })
-          }, 500)
-        })
-      } catch (error) {
-        console.error("❌ Error in command sequence:", error)
-        clearTimeout(timeout)
-        cleanup()
-        resolve({
-          success: false,
-          message: "Errore sequenza comandi",
-          details: error instanceof Error ? error.message : "Errore sconosciuto"
-        })
-      }
+      // Chiudi immediatamente senza inviare comandi
+      cleanup()
+      
+      resolve({
+        success: true,
+        message: "Connessione TCP OK",
+        details: "La porta 9100 è aperta e accetta connessioni. Il problema potrebbe essere nei comandi ESC/POS."
+      })
     })
 
+    // Gestione errori
     socket.on("error", (error: any) => {
-      console.error("❌ Socket error:", error)
+      console.error("❌ TCP connection error:", error)
       clearTimeout(timeout)
       cleanup()
       
-      let message = "Errore di connessione"
-      let details = error.message
+      let message = "Errore TCP"
+      let details = ""
 
-      if (error.code === "ECONNREFUSED") {
-        message = "Connessione rifiutata"
-        details = "La stampante rifiuta connessioni sulla porta 9100. Potrebbe essere occupata o mal configurata."
-      } else if (error.code === "EHOSTUNREACH") {
-        message = "Host non raggiungibile"
-        details = "Problema di routing di rete nonostante il ping funzioni."
-      } else if (error.code === "ETIMEDOUT") {
-        message = "Timeout di rete"
-        details = "La connessione TCP è andata in timeout."
+      switch (error.code) {
+        case "ECONNREFUSED":
+          message = "Connessione TCP rifiutata"
+          details = "La porta 9100 è chiusa o la stampante non accetta connessioni TCP raw."
+          break
+        case "EHOSTUNREACH":
+          message = "Host non raggiungibile via TCP"
+          details = "Problema di routing TCP nonostante il ping ICMP funzioni."
+          break
+        case "ETIMEDOUT":
+          message = "Timeout TCP"
+          details = "La connessione TCP è andata in timeout."
+          break
+        case "ENOTFOUND":
+          message = "Host non trovato"
+          details = "Errore di risoluzione DNS/IP."
+          break
+        default:
+          message = "Errore TCP generico"
+          details = `${error.message} (${error.code || 'UNKNOWN'})`
       }
 
       resolve({
         success: false,
         message: message,
-        details: `${details} (${error.code || 'UNKNOWN'})`
+        details: details
       })
     })
 
     socket.on("close", () => {
-      console.log("🔌 Socket closed")
+      console.log("🔌 TCP connection closed")
       clearTimeout(timeout)
     })
 
     socket.on("timeout", () => {
-      console.log("⏰ Socket timeout event")
-      if (!responseReceived) {
+      console.log("⏰ TCP socket timeout")
+      if (!connected) {
         clearTimeout(timeout)
         cleanup()
         resolve({
           success: false,
-          message: "Timeout socket",
-          details: "Il socket è andato in timeout durante la comunicazione"
+          message: "Timeout socket TCP",
+          details: "Il socket TCP è andato in timeout durante la connessione."
         })
       }
     })
