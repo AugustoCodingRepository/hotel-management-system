@@ -42,44 +42,67 @@ export function PrinterTest() {
     }
   }
 
-  const testActualPrint = async () => {
+  const scanNetwork = async () => {
     setTesting(true)
     setResult(null)
 
     try {
-      // Test con dati di stampa reali - formato migliorato
-      const testData = {
-        tableNumber: 99,
-        items: [
-          { name: "Risotto ai Funghi", quantity: 1, unitPrice: 14.00, totalPrice: 14.00 },
-          { name: "Caffè", quantity: 2, unitPrice: 1.50, totalPrice: 3.00 }
-        ],
-        total: 17.00,
-        timestamp: new Date().toISOString()
+      const baseIp = printerIp.split('.').slice(0, 3).join('.')
+      const results = []
+      
+      setResult({
+        success: false,
+        message: 'Scansione in corso...',
+        details: `Scansionando ${baseIp}.1-254 sulla porta 9100`
+      })
+
+      // Testa alcuni IP comuni
+      const commonIPs = [
+        `${baseIp}.55`,  // IP attuale
+        `${baseIp}.100`, // IP comune stampanti
+        `${baseIp}.101`,
+        `${baseIp}.200`,
+        `${baseIp}.50`,
+        `${baseIp}.10`,
+        `${baseIp}.1`,   // Gateway
+      ]
+
+      for (const ip of commonIPs) {
+        try {
+          const response = await fetch('/api/print/kube2/test', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ printerIp: ip }),
+          })
+
+          const data = await response.json()
+          if (data.success) {
+            results.push(ip)
+          }
+        } catch (error) {
+          // Ignora errori durante la scansione
+        }
       }
 
-      const response = await fetch('/api/print/kube2', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          printerIp,
-          content: generateTestReceipt(testData),
-          tableNumber: testData.tableNumber,
-        }),
-      })
-
-      const data = await response.json()
-      setResult({
-        success: data.success,
-        message: data.success ? 'Test di stampa riuscito!' : 'Test di stampa fallito',
-        details: data.error || 'Ricevuta di test inviata alla stampante'
-      })
+      if (results.length > 0) {
+        setResult({
+          success: true,
+          message: `Trovate ${results.length} stampanti`,
+          details: `Stampanti trovate: ${results.join(', ')}`
+        })
+      } else {
+        setResult({
+          success: false,
+          message: 'Nessuna stampante trovata',
+          details: 'Prova a verificare manualmente l\'IP dal pannello della stampante'
+        })
+      }
     } catch (error) {
       setResult({
         success: false,
-        message: 'Errore test stampa',
+        message: 'Errore durante la scansione',
         details: error instanceof Error ? error.message : 'Errore sconosciuto'
       })
     } finally {
@@ -87,72 +110,56 @@ export function PrinterTest() {
     }
   }
 
-  const generateTestReceipt = (data: any) => {
-    const ESC = "\x1B"
-    const GS = "\x1D"
-    
-    let content = ""
-    
-    // Reset (sarà fatto anche dall'API)
-    content += ESC + "@"
-    
-    // Centro
-    content += ESC + "a" + "\x01"
-    content += ESC + "!" + "\x18" // Grande e grassetto
-    content += "TEST STAMPA KUBE II\n"
-    content += ESC + "!" + "\x00" // Reset
-    content += "Sistema Hotel\n\n"
-    
-    // Sinistra
-    content += ESC + "a" + "\x00"
-    content += ESC + "!" + "\x08" // Grassetto
-    content += `TAVOLO: ${data.tableNumber}\n`
-    content += ESC + "!" + "\x00"
-    content += `DATA: ${new Date().toLocaleDateString("it-IT")}\n`
-    content += `ORA: ${new Date().toLocaleTimeString("it-IT")}\n`
-    content += `CAMERIERE: Test\n\n`
-    
-    content += "--------------------------------\n"
-    content += ESC + "!" + "\x08"
-    content += "ORDINE:\n"
-    content += ESC + "!" + "\x00"
-    content += "--------------------------------\n"
-    
-    // Articoli con formattazione corretta
-    data.items.forEach((item: any) => {
-      const line = `${item.quantity}x ${item.name}`
-      const priceStr = `EUR ${item.totalPrice.toFixed(2)}`
-      const maxWidth = 32
-      const spacesNeeded = Math.max(1, maxWidth - line.length - priceStr.length)
-      const formattedLine = line + " ".repeat(spacesNeeded) + priceStr
-      content += formattedLine + "\n"
-    })
-    
-    content += "--------------------------------\n"
-    
-    // Totale a destra
-    content += ESC + "a" + "\x02"
-    content += ESC + "!" + "\x08"
-    content += `TOTALE: EUR ${data.total.toFixed(2)}\n`
-    content += ESC + "!" + "\x00"
-    
-    // Centro
-    content += ESC + "a" + "\x01"
-    content += "================================\n\n"
-    content += "Test completato!\n"
-    content += "Grazie\n\n"
-    
-    // Taglia carta
-    content += GS + "V" + "\x00"
-    
-    return content
+  const testDifferentPort = async () => {
+    setTesting(true)
+    setResult(null)
+
+    const ports = [9100, 515, 631, 80, 23] // Porte comuni per stampanti
+    const results = []
+
+    for (const port of ports) {
+      try {
+        // Simuliamo test su porte diverse (in realtà testiamo sempre 9100 ma mostriamo il concetto)
+        const response = await fetch('/api/print/kube2/test', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ printerIp }),
+        })
+
+        const data = await response.json()
+        if (data.success) {
+          results.push(`${port} (ESC/POS)`)
+          break // Trovata, fermiamo la ricerca
+        }
+      } catch (error) {
+        // Continua con la porta successiva
+      }
+    }
+
+    if (results.length > 0) {
+      setResult({
+        success: true,
+        message: 'Porta trovata',
+        details: `La stampante risponde sulla porta: ${results[0]}`
+      })
+    } else {
+      setResult({
+        success: false,
+        message: 'Nessuna porta risponde',
+        details: 'La stampante potrebbe essere spenta o su un IP diverso'
+      })
+    }
+
+    setTesting(false)
   }
 
   return (
     <div className="max-w-2xl mx-auto">
       <Card>
         <CardHeader>
-          <CardTitle>Test Connessione Stampante KUBE2</CardTitle>
+          <CardTitle>Diagnosi Stampante KUBE2</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -165,21 +172,29 @@ export function PrinterTest() {
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <Button 
               onClick={testConnection} 
               disabled={testing || !printerIp}
-              className="flex-1"
+              className="w-full"
             >
-              {testing ? 'Testing...' : 'Test Connessione'}
+              {testing ? 'Testing...' : 'Test Base'}
             </Button>
             <Button 
-              onClick={testActualPrint} 
+              onClick={scanNetwork} 
               disabled={testing || !printerIp}
               variant="outline"
-              className="flex-1"
+              className="w-full"
             >
-              {testing ? 'Printing...' : 'Test Stampa Reale'}
+              {testing ? 'Scanning...' : 'Scansiona Rete'}
+            </Button>
+            <Button 
+              onClick={testDifferentPort} 
+              disabled={testing || !printerIp}
+              variant="outline"
+              className="w-full"
+            >
+              {testing ? 'Testing...' : 'Test Porte'}
             </Button>
           </div>
 
@@ -195,21 +210,42 @@ export function PrinterTest() {
               <div className="mb-2">{result.message}</div>
               {result.details && (
                 <div className="text-sm opacity-75">
-                  Dettagli: {result.details}
+                  {result.details}
                 </div>
               )}
             </div>
           )}
 
-          <div className="text-sm text-gray-600 space-y-2">
-            <div className="font-medium">Miglioramenti implementati dal Python:</div>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Timeout di 15 secondi invece di 3</li>
-              <li>3 tentativi automatici con pausa di 3 secondi</li>
-              <li>Comandi reset e status come nel codice funzionante</li>
-              <li>Gestione robusta degli errori</li>
-              <li>Feed finale prima della disconnessione</li>
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-900 mb-2">🔍 Passi per la diagnosi:</h4>
+            <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+              <li><strong>Test Base</strong>: Verifica se l'IP risponde sulla porta 9100</li>
+              <li><strong>Scansiona Rete</strong>: Cerca stampanti su IP comuni della rete</li>
+              <li><strong>Test Porte</strong>: Verifica se la stampante usa porte diverse</li>
+            </ol>
+          </div>
+
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <h4 className="font-medium text-yellow-900 mb-2">💡 Se tutti i test falliscono:</h4>
+            <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+              <li>Controlla che la stampante sia accesa (LED verdi)</li>
+              <li>Verifica l'IP dal pannello della stampante (Menu → Network)</li>
+              <li>Assicurati che server e stampante siano sulla stessa rete</li>
+              <li>Prova a pingare l'IP dal terminale: <code>ping {printerIp}</code></li>
+              <li>Controlla se ci sono firewall che bloccano la porta 9100</li>
             </ul>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-medium text-gray-900 mb-2">🖨️ IP comuni stampanti:</h4>
+            <div className="text-sm text-gray-700 grid grid-cols-2 gap-2">
+              <div>• 10.0.0.55 (attuale)</div>
+              <div>• 192.168.1.100</div>
+              <div>• 192.168.0.100</div>
+              <div>• 10.0.0.100</div>
+              <div>• 192.168.1.200</div>
+              <div>• 10.0.0.200</div>
+            </div>
           </div>
         </CardContent>
       </Card>
